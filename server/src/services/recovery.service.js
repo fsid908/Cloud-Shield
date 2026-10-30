@@ -99,6 +99,14 @@ const recoverFile = async (fileId, userId) => {
             );
         }
 
+        // Only safe files can be recovered.
+if (file.status !== "safe") {
+    throw new AppError(
+        "Recovery is only available for safe files.",
+        409
+    );
+}
+
         // A trusted backup requires both its stored filename and hash.
         if (!file.backupStoredName || !file.backupHash) {
             throw new AppError(

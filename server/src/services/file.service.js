@@ -5,6 +5,8 @@ import File from "../models/file.model.js";
 import AppError from "../utils/AppError.js";
 import { validateUploadedFile, } from "../utils/fileValidator.js";
 import fileActivityService from "./fileActivity.service.js";
+import clamavService from "./clamav.service.js";
+import securityEventService from "./securityEvent.service.js";
 
 const UPLOAD_DIRECTORY = path.resolve(
     process.cwd(),
@@ -15,6 +17,12 @@ const BACKUP_DIRECTORY = path.resolve(
     process.cwd(),
     "uploads", "backups"
 )
+
+const QUARANTINE_DIRECTORY = path.resolve(
+    process.cwd(),
+    "uploads",
+    "quarantine"
+);
 
 const writeExclusiveFile = async (filePath, buffer, onCreated) => {
     // Create a new file without overwriting an existing path.
@@ -58,6 +66,11 @@ const createFile = async (userId, uploadedFile) => {
     // Validate the uploaded file before writing anything to disk.
     const detectedFile = await validateUploadedFile(uploadedFile);
 
+    // Scan the uploaded file before storing it or creating a backup.
+const scanResult = await clamavService.scanBuffer(
+    uploadedFile.buffer
+);
+
     // Calculate the SHA-256 hash of the uploaded content.
     const hash = crypto
         .createHash("sha256")
@@ -68,33 +81,40 @@ const createFile = async (userId, uploadedFile) => {
     const extension = path.extname(uploadedFile.originalname);
 
     const storedName = `${crypto.randomUUID()}${extension}`;
-    const backupStoredName = `${crypto.randomUUID()}${extension}`;
+
+const isInfected = scanResult.status === "infected";
+
+const backupStoredName = isInfected
+    ? null
+    : `${crypto.randomUUID()}${extension}`;
 
     // Resolve the physical storage paths.
-    const absolutePath = path.join(UPLOAD_DIRECTORY, storedName);
+   const absolutePath = isInfected
+    ? path.join(QUARANTINE_DIRECTORY, storedName)
+    : path.join(UPLOAD_DIRECTORY, storedName);
 
-    const absoluteBackupPath = path.join(
-        BACKUP_DIRECTORY,
-        backupStoredName
-    );
+const absoluteBackupPath = backupStoredName
+    ? path.join(BACKUP_DIRECTORY, backupStoredName)
+    : null;
 
-    // Store relative paths in the database.
-    const storagePath = path.join("uploads", storedName);
+const storagePath = isInfected
+    ? path.join("uploads", "quarantine", storedName)
+    : path.join("uploads", storedName);
 
-    const backupStoragePath = path.join(
-        "uploads",
-        "backups",
-        backupStoredName
-    );
+const backupStoragePath = backupStoredName
+    ? path.join("uploads", "backups", backupStoredName)
+    : null;
 
     // The backup originates from the same validated buffer.
-    const backupHash = crypto
+    const backupHash = backupStoredName
+    ? crypto
         .createHash("sha256")
         .update(uploadedFile.buffer)
-        .digest("hex");
+        .digest("hex")
+    : null;
 
     // Verify the expected content hash before writing to disk.
-    if (hash !== backupHash) {
+   if (backupHash && hash !== backupHash) {
         throw new AppError(
             "Trusted backup verification failed.",
             500
@@ -108,46 +128,52 @@ const createFile = async (userId, uploadedFile) => {
 
     try {
         // Ensure both storage directories exist.
-        await fs.mkdir(UPLOAD_DIRECTORY, {
-            recursive: true,
-        });
+        // Create the required storage directories.
+await fs.mkdir(path.dirname(absolutePath), {
+    recursive: true,
+});
 
-        await fs.mkdir(BACKUP_DIRECTORY, {
-            recursive: true,
-        });
+if (absoluteBackupPath) {
+    await fs.mkdir(BACKUP_DIRECTORY, {
+        recursive: true,
+    });
+}
 
-        // Create the current file and track ownership immediately.
-        await writeExclusiveFile(
-            absolutePath,
-            uploadedFile.buffer,
-            () => {
-                currentFileWritten = true;
-            }
-        );
+// Store the uploaded file in its designated location.
+await writeExclusiveFile(
+    absolutePath,
+    uploadedFile.buffer,
+    () => {
+        currentFileWritten = true;
+    }
+);
 
-        // Create the trusted backup and track ownership immediately.
-        await writeExclusiveFile(
-            absoluteBackupPath,
-            uploadedFile.buffer,
-            () => {
-                backupFileWritten = true;
-            }
-        );
-
-        // Read the backup from disk and verify its actual contents.
-        const storedBackupBuffer = await fs.readFile(absoluteBackupPath);
-
-        const storedBackupHash = crypto
-            .createHash("sha256")
-            .update(storedBackupBuffer)
-            .digest("hex");
-
-        if (storedBackupHash !== hash) {
-            throw new AppError(
-                "Trusted backup verification failed.",
-                500
-            );
+// Create a trusted backup only for files without malware.
+if (absoluteBackupPath) {
+    await writeExclusiveFile(
+        absoluteBackupPath,
+        uploadedFile.buffer,
+        () => {
+            backupFileWritten = true;
         }
+    );
+
+    const storedBackupBuffer = await fs.readFile(
+        absoluteBackupPath
+    );
+
+    const storedBackupHash = crypto
+        .createHash("sha256")
+        .update(storedBackupBuffer)
+        .digest("hex");
+
+    if (storedBackupHash !== hash) {
+        throw new AppError(
+            "Trusted backup verification failed.",
+            500
+        );
+    }
+}
 
         // Create the database record only after both files exist.
         const file = await File.create({
@@ -161,7 +187,7 @@ const createFile = async (userId, uploadedFile) => {
             backupStoredName,
             backupStoragePath,
             backupHash,
-            status: "pending",
+            status: isInfected ? "quarantined" : "safe",
             integrityStatus: "intact",
         });
 
@@ -174,6 +200,30 @@ const createFile = async (userId, uploadedFile) => {
             activityType: "created",
             currentName: file.originalName,
         });
+
+        // Record malware detection as a security event.
+if (isInfected) {
+    try {
+        await securityEventService.createSecurityEvent({
+            userId,
+            fileId: file._id,
+            eventType: "suspicious_activity",
+            detectionType: "clamav_malware",
+            episodeId: crypto.randomUUID(),
+            riskScore: 90,
+            reason: "ClamAV detected malware in the uploaded file.",
+            metadata: {
+                scanner: "ClamAV",
+                detectionResult: scanResult.result,
+            },
+        });
+    } catch (error) {
+        console.error("Failed to record malware detection event:", {
+            fileId: String(file._id),
+            message: error.message,
+        });
+    }
+}
 
         return file;
         } catch (error) {
