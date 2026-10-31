@@ -54,7 +54,7 @@ function AuthPage({ onLogin }) {
         setForm({ fullName: "", email: "" , password: "", confirmPassword: "" });
         setError("");
       } else {
-        onLogin();
+       await onLogin();
       }
     } catch (err) {
       setError(err.message || "Something went wrong.");
@@ -108,6 +108,7 @@ function AuthPage({ onLogin }) {
               value={form.email}
               onChange={handleChange}
               placeholder="you@example.com"
+              autoComplete="off"
               required
             />
           </label>
@@ -122,6 +123,7 @@ function AuthPage({ onLogin }) {
                 onChange={handleChange}
                 placeholder="Enter your password"
                 minLength={isRegister ? 8 : undefined}
+                autoComplete="new-password"
                 required
               />
               <button
@@ -143,6 +145,7 @@ function AuthPage({ onLogin }) {
                 value={form.confirmPassword}
                 onChange={handleChange}
                 placeholder="Confirm your password"
+                autoComplete="new-password"
                 required
               />
             </label>

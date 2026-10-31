@@ -55,7 +55,23 @@ const me = async (req, res, next) => {
         next(error);
     }   
 };
+const updateProfile = async (req, res, next) => {
+    try {
+        const updatedUser = await authService.updateUserProfile(
+            req.user._id,
+            req.body
+        );
 
+        return sendSuccess(
+            res,
+            200,
+            "Profile updated successfully.",
+            updatedUser
+        );
+    } catch (error) {
+        next(error);
+    }
+};
 //  for logout
 const logout = async (req, res, next) => {
     try {
@@ -96,4 +112,5 @@ export default {
     login,
     me,
     logout,
+    updateProfile,
 };
