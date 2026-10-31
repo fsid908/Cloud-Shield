@@ -4,51 +4,49 @@ import { sendSuccess } from "../utils/response.js";
 
 // create file metadata
 const createFile = async (req, res, next) => {
-    try {
-        // Multer places the uploaded file in req.file
-        if (!req.file) {
-            throw new AppError("File is required.", 400);
-        }
-
-        // Authentication middleware provides the authenticated user
-        const userId = req.user._id;
-
-        // Pass the actual uploaded file to the service
-        const file = await fileService.createFile(
-            userId,
-            req.file
-        );
-
-        return sendSuccess(res, 201, "File uploaded successfully.", file
-        );
-    } catch (error) {
-        next(error);
+  try {
+    // Multer places the uploaded file in req.file
+    if (!req.file) {
+      throw new AppError("File is required.", 400);
     }
-};
 
+    // Authentication middleware provides the authenticated user
+    const userId = req.user._id;
+
+    // Pass the actual uploaded file to the service
+    const file = await fileService.createFile(userId, req.file);
+
+    const message =
+      file.status === "quarantined"
+        ? "Malware detected! File has been quarantined."
+        : "File uploaded successfully.";
+
+    return sendSuccess(res, 201, message, file);
+  } catch (error) {
+    next(error);
+  }
+};
 
 //get file owned by authenticated user
 const getFile = async (req, res, next) => {
-    try {
-        // get authenticated user 
-        const userId = req.user._id;
+  try {
+    // get authenticated user
+    const userId = req.user._id;
 
-        // get file ID  from URL parameter
-        const { fileId } = req.params;
+    // get file ID  from URL parameter
+    const { fileId } = req.params;
 
-        // service enforces ownership
-        const file = await fileService.getUserFile(
-            fileId, userId
-        );
+    // service enforces ownership
+    const file = await fileService.getUserFile(fileId, userId);
 
-        // return file metadata
-        return sendSuccess(res, 200, " file retrived successfully.", file
-        );
-    } catch (error) {
-        next(error);
-    }
+    // return file metadata
+    return sendSuccess(res, 200, " file retrived successfully.", file);
+  } catch (error) {
+    next(error);
+  }
 };
 
 export default {
-    createFile, getFile
+  createFile,
+  getFile,
 };
