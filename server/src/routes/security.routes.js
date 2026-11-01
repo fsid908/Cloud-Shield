@@ -10,4 +10,6 @@ router.get ("/activity", authenticate, detectionController.getRecentActivity);
 // Analyze recent file activity for suspicious signals.
 router.get( "/detection", authenticate, detectionController.detectSuspiciousActivity );
 
+router.get("/events", authenticate, detectionController.getSecurityEvents);
+
 export default router;

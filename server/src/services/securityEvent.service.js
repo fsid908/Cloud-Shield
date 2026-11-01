@@ -132,6 +132,19 @@ const createSecurityEvent = async ({
     }
 };
 
+const getUserSecurityEvents = async (userId, limit = 20) => {
+    if (!userId) {
+        throw new AppError("User ID is required.", 400);
+    }
+
+    return SecurityEvent.find({ userId })
+        .populate("fileId", "originalName storedName")
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+};
+
 export default {
     createSecurityEvent,
+    getUserSecurityEvents,
 };
