@@ -68,146 +68,6 @@ const secondaryNavigation = [
   { label: "Settings", icon: Settings },
 ];
 
-const metrics = [
-  {
-    label: "Protected files",
-
-    value: "12,480",
-
-    change: "+4.8%",
-
-    note: "vs. previous period",
-
-    icon: Files,
-
-    color: "blue",
-
-    trend: "up",
-  },
-
-  {
-    label: "Threats detected",
-
-    value: "07",
-
-    change: "3 new",
-
-    note: "in the last 24 hours",
-
-    icon: ShieldAlert,
-
-    color: "amber",
-
-    trend: "down",
-  },
-
-  {
-    label: "Backup success rate",
-
-    value: "98.6%",
-
-    change: "+1.2%",
-
-    note: "vs. previous period",
-
-    icon: Database,
-
-    color: "teal",
-
-    trend: "up",
-  },
-
-  {
-    label: "Open incidents",
-
-    value: "02",
-
-    change: "Needs review",
-
-    note: "awaiting investigation",
-
-    icon: AlertTriangle,
-
-    color: "red",
-
-    trend: "neutral",
-  },
-];
-
-const events = [
-  {
-    title: "Unusual file modification rate",
-
-    asset: "cloud-storage-01",
-
-    time: "10:42:18 AM",
-
-    severity: "High",
-
-    status: "Investigating",
-
-    color: "red",
-  },
-
-  {
-    title: "Backup integrity verification",
-
-    asset: "backup-vault-02",
-
-    time: "10:31:06 AM",
-
-    severity: "Info",
-
-    status: "Completed",
-
-    color: "teal",
-  },
-
-  {
-    title: "Suspicious file extension detected",
-
-    asset: "workstation-04",
-
-    time: "09:56:42 AM",
-
-    severity: "Medium",
-
-    status: "Under review",
-
-    color: "amber",
-  },
-
-  {
-    title: "Scheduled backup completed",
-
-    asset: "cloud-storage-01",
-
-    time: "09:30:00 AM",
-
-    severity: "Info",
-
-    status: "Completed",
-
-    color: "teal",
-  },
-];
-
-const activityData = [
-  { day: "09 Oct", threats: 3, files: 18 },
-
-  { day: "10 Oct", threats: 5, files: 26 },
-
-  { day: "11 Oct", threats: 2, files: 16 },
-
-  { day: "12 Oct", threats: 8, files: 35 },
-
-  { day: "13 Oct", threats: 4, files: 22 },
-
-  { day: "14 Oct", threats: 7, files: 29 },
-
-  { day: "15 Oct", threats: 3, files: 19 },
-];
-
 const pageTitles = {
   Overview: [
     "Security overview",
@@ -311,6 +171,9 @@ function App() {
 
   const [user, setUser] = useState(null);
 
+  const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editFullName, setEditFullName] = useState("");
@@ -357,6 +220,62 @@ function App() {
     };
   }, []);
 
+  const fetchDashboardData = async (signal) => {
+    setDashboardLoading(true);
+    setDashboardError("");
+
+    const base = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+    try {
+      const [activityResponse, detectionResponse] = await Promise.all([
+        fetch(`${base}/security/activity`, {
+          credentials: "include",
+          signal,
+        }),
+        fetch(`${base}/security/detection`, {
+          credentials: "include",
+          signal,
+        }),
+      ]);
+
+      const [activity, detection] = await Promise.all([
+        activityResponse.json(),
+        detectionResponse.json(),
+      ]);
+
+      if (!activityResponse.ok || !activity.success) {
+        throw new Error(activity.message || "Failed to load activity.");
+      }
+
+      if (!detectionResponse.ok || !detection.success) {
+        throw new Error(detection.message || "Failed to load detection data.");
+      }
+
+      setDashboardData({
+        activity: activity.data,
+        detection: detection.data,
+      });
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        setDashboardError(error.message);
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setDashboardLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const controller = new AbortController();
+
+    fetchDashboardData(controller.signal);
+
+    return () => controller.abort();
+  }, [isAuthenticated]);
+
   const handleLogout = async () => {
     try {
       const response = await fetch(
@@ -385,8 +304,6 @@ function App() {
 
   const [activePage, setActivePage] = useState("Overview");
 
-  const [timeRange, setTimeRange] = useState("7 days");
-
   const [search, setSearch] = useState("");
 
   const [showNotifications, setShowNotifications] = useState(false);
@@ -410,7 +327,7 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
 
   const [uploadMessage, setUploadMessage] = useState(
-    "Upload UI ready — backend is not connected yet.",
+    "Upload UI ready — secure file scanning is available.",
   );
 
   const [scanStatus, setScanStatus] = useState("idle");
@@ -549,6 +466,68 @@ function App() {
     }
   };
 
+  const dashboardMetrics = [
+    {
+      label: "Recent activity",
+      value: dashboardData?.activity?.totalEvents ?? "—",
+      change: `${dashboardData?.activity?.riskLevel ?? "—"} risk`,
+      note: `Last ${dashboardData?.activity?.windowSeconds ?? 30} seconds`,
+      icon: Activity,
+      color: "blue",
+      trend: "neutral",
+    },
+    {
+      label: "Files modified",
+      value: dashboardData?.activity?.uniqueFilesModified ?? "—",
+      change: "Recent activity",
+      note: "Unique files modified",
+      icon: Files,
+      color: "teal",
+      trend: "neutral",
+    },
+    {
+      label: "Suspicious signals",
+      value: dashboardData?.detection?.signalCount ?? "—",
+      change: "Detection analysis",
+      note: "Recent suspicious signals",
+      icon: ShieldAlert,
+      color: "amber",
+      trend: "neutral",
+    },
+    {
+      label: "Persisted events",
+      value: dashboardData?.detection?.persistedEventCount ?? "—",
+      change: "Recorded events",
+      note: "Saved security events",
+      icon: AlertTriangle,
+      color: "red",
+      trend: "neutral",
+    },
+  ];
+
+  const events = (dashboardData?.detection?.events ?? []).map((event) => {
+    const riskScore = Number(event.riskScore ?? 0);
+
+    const color = riskScore >= 70 ? "red" : riskScore >= 40 ? "amber" : "teal";
+
+    const severity =
+      riskScore >= 70 ? "High" : riskScore >= 40 ? "Medium" : "Low";
+
+    const timestamp = event.createdAt ?? event.updatedAt;
+
+    return {
+      title:
+        event.reason ||
+        event.detectionType ||
+        event.eventType ||
+        "Security event",
+      asset: event.fileId || "Unknown file",
+      time: timestamp ? new Date(timestamp).toLocaleString() : "—",
+      severity,
+      status: "Recorded",
+      color,
+    };
+  });
   const filteredEvents = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -561,7 +540,7 @@ function App() {
 
         .includes(query),
     );
-  }, [search]);
+  }, [search, events]);
 
   const selectPage = (label) => {
     setActivePage(label);
@@ -1111,7 +1090,8 @@ function App() {
                   <button
                     type="button"
                     className="button button-secondary"
-                    onClick={() => notify("Demo data refreshed.")}
+                    onClick={() => fetchDashboardData()}
+                    disabled={dashboardLoading}
                   >
                     <RefreshCw size={15} />
                     Refresh
@@ -1134,8 +1114,9 @@ function App() {
                 </span>
 
                 <span>
-                  <strong>Preview mode</strong> — The figures and events shown
-                  here are illustrative demo data, not live security telemetry.
+                  <strong>Live API connected</strong> — Security metrics and
+                  recent activity are retrieved from the backend. Backup
+                  analytics are unavailable.
                 </span>
 
                 <button
@@ -1369,7 +1350,8 @@ function App() {
                 </div>
 
                 <p className="upload-disclaimer">
-                  Files are uploaded to the backend. Malware scanning status is not confirmed by upload success alone.
+                  Files are uploaded to the backend. Malware scanning status is
+                  not confirmed by upload success alone.
                 </p>
               </section>
 
@@ -1382,7 +1364,7 @@ function App() {
                   <div className="protection-title-row">
                     <h2>Protection overview</h2>
 
-                    <Badge tone="success">Demo status: healthy</Badge>
+                    <Badge tone="neutral">Monitoring status unavailable</Badge>
                   </div>
 
                   <p>
@@ -1411,7 +1393,22 @@ function App() {
               </section>
 
               <section className="metrics-grid" aria-label="Security metrics">
-                {metrics.map((metric) => (
+                {dashboardLoading && (
+                  <p role="status">Loading live security metrics...</p>
+                )}
+
+                {dashboardError && (
+                  <p role="alert">
+                    Unable to load security metrics: {dashboardError}
+                  </p>
+                )}
+
+                {!dashboardLoading && !dashboardError && !dashboardData && (
+                  <p role="status">
+                    Security metrics are currently unavailable.
+                  </p>
+                )}
+                {dashboardMetrics.map((metric) => (
                   <MetricCard key={metric.label} metric={metric} />
                 ))}
               </section>
@@ -1420,145 +1417,65 @@ function App() {
                 <article className="panel activity-panel">
                   <div className="panel-header">
                     <div>
-                      <h2>Security activity</h2>
-
-                      <p>Detection events over time</p>
+                      <h2>Live security activity</h2>
+                      <p>Recent activity snapshot</p>
                     </div>
-
-                    <label className="select-wrap">
-                      <select
-                        value={timeRange}
-                        onChange={(event) => setTimeRange(event.target.value)}
-                        aria-label="Chart time range"
-                      >
-                        <option>7 days</option>
-
-                        <option>30 days</option>
-
-                        <option>90 days</option>
-                      </select>
-
-                      <ChevronDown size={14} />
-                    </label>
+                    <Badge tone="success">
+                      {dashboardData?.activity?.riskLevel ?? "Unavailable"}
+                    </Badge>
                   </div>
 
-                  <div className="chart-legend">
-                    <span>
-                      <i className="legend-dot legend-threat" />
-                      Threat events
-                    </span>
-
-                    <span>
-                      <i className="legend-dot legend-files" />
-                      File activity
-                    </span>
-                  </div>
-
-                  <div className="activity-chart">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={activityData}
-                        margin={{ top: 12, right: 8, left: -20, bottom: 0 }}
-                      >
-                        <defs>
-                          <linearGradient
-                            id="threatFill"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="#6692ff"
-                              stopOpacity={0.22}
-                            />
-
-                            <stop
-                              offset="95%"
-                              stopColor="#6692ff"
-                              stopOpacity={0}
-                            />
-                          </linearGradient>
-
-                          <linearGradient
-                            id="fileFill"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="#52c8ba"
-                              stopOpacity={0.12}
-                            />
-
-                            <stop
-                              offset="95%"
-                              stopColor="#52c8ba"
-                              stopOpacity={0}
-                            />
-                          </linearGradient>
-                        </defs>
-
-                        <CartesianGrid
-                          stroke="#e9edf3"
-                          strokeDasharray="3 4"
-                          vertical={false}
-                        />
-
-                        <XAxis
-                          dataKey="day"
-                          tick={{ fill: "#8792a5", fontSize: 11 }}
-                          tickLine={false}
-                          axisLine={false}
-                          dy={10}
-                        />
-
-                        <YAxis
-                          tick={{ fill: "#8792a5", fontSize: 11 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-
-                        <Tooltip
-                          contentStyle={{
-                            border: "1px solid #e5eaf1",
-
-                            borderRadius: 10,
-
-                            fontSize: 12,
-                          }}
-                        />
-
-                        <Area
-                          type="monotone"
-                          dataKey="files"
-                          name="File activity"
-                          stroke="#52b9ac"
-                          strokeWidth={2}
-                          fill="url(#fileFill)"
-                        />
-
-                        <Area
-                          type="monotone"
-                          dataKey="threats"
-                          name="Threat events"
-                          stroke="#6287ed"
-                          strokeWidth={2.2}
-                          fill="url(#threatFill)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                  <div className="backup-stats">
+                    {[
+                      {
+                        label: "Total activities",
+                        value:
+                          dashboardData?.detection?.activity?.totalActivities,
+                      },
+                      {
+                        label: "Modifications",
+                        value:
+                          dashboardData?.detection?.activity?.modifications,
+                      },
+                      {
+                        label: "Renames",
+                        value: dashboardData?.detection?.activity?.renames,
+                      },
+                      {
+                        label: "Deletions",
+                        value: dashboardData?.detection?.activity?.deletions,
+                      },
+                      {
+                        label: "Extension changes",
+                        value:
+                          dashboardData?.detection?.activity?.extensionChanges,
+                      },
+                      {
+                        label: "Risk score",
+                        value: dashboardData?.activity?.riskScore,
+                      },
+                    ].map((item) => (
+                      <div key={item.label}>
+                        <span>{item.label}</span>
+                        <strong>{item.value ?? "—"}</strong>
+                      </div>
+                    ))}
                   </div>
 
                   <div className="chart-footer">
                     <span>
                       <Activity size={14} />
-                      Activity is based on sample events
+                      Live data · Last 30 seconds
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => selectPage("Analytics & reports")}
+                    >
+                      View analytics <ArrowRight size={14} />
+                    </button>
+                  </div>
 
+                  <div className="chart-footer">
                     <button
                       type="button"
                       onClick={() => selectPage("Analytics & reports")}
@@ -1572,8 +1489,7 @@ function App() {
                   <div className="panel-header">
                     <div>
                       <h2>Backup health</h2>
-
-                      <p>Sample recovery readiness</p>
+                      <p>Recovery readiness</p>
                     </div>
 
                     <button
@@ -1581,9 +1497,7 @@ function App() {
                       className="icon-button subtle-icon"
                       aria-label="Backup options"
                       onClick={() =>
-                        notify(
-                          "Backup settings will be connected to the backend later.",
-                        )
+                        notify("Backup health data is not available yet.")
                       }
                     >
                       <MoreHorizontal size={19} />
@@ -1591,72 +1505,10 @@ function App() {
                   </div>
 
                   <div className="backup-score">
-                    <div className="score-ring">
-                      <div>
-                        <strong>
-                          98.6<span>%</span>
-                        </strong>
-
-                        <small>Success rate</small>
-                      </div>
-                    </div>
-
                     <div className="backup-score-copy">
-                      <Badge tone="success">Healthy (demo)</Badge>
-
-                      <p>
-                        Sample backup performance for the selected reporting
-                        period.
-                      </p>
+                      <Badge tone="neutral">Unavailable</Badge>
+                      <p>metrics are not currently provided by the backend.</p>
                     </div>
-                  </div>
-
-                  <div className="backup-stats">
-                    <div>
-                      <span>
-                        <i className="mini-dot dot-green" />
-                        Successful jobs
-                      </span>
-
-                      <strong>286</strong>
-                    </div>
-
-                    <div>
-                      <span>
-                        <i className="mini-dot dot-amber" />
-                        Failed jobs
-                      </span>
-
-                      <strong>04</strong>
-                    </div>
-
-                    <div>
-                      <span>
-                        <i className="mini-dot dot-blue" />
-                        Storage used
-                      </span>
-
-                      <strong>64.2 GB</strong>
-                    </div>
-                  </div>
-
-                  <div className="last-backup">
-                    <span className="last-backup-icon">
-                      <HardDrive size={17} />
-                    </span>
-
-                    <div>
-                      <span>Last successful backup</span>
-
-                      <strong>
-                        Today, 09:30 AM{" "}
-                        <span className="verified-check">
-                          <Check size={11} />
-                        </span>
-                      </strong>
-                    </div>
-
-                    <Badge tone="success">Sample</Badge>
                   </div>
 
                   <button
@@ -1674,7 +1526,7 @@ function App() {
                   <div>
                     <h2>Recent security events</h2>
 
-                    <p>Latest entries from the sample event feed</p>
+                    <p>Latest security events from backend</p>
                   </div>
 
                   <button
@@ -1773,8 +1625,9 @@ function App() {
                       {filteredEvents.length === 0 && (
                         <tr>
                           <td colSpan="6" className="empty-state">
-                            No sample events match “{search}”. Try another
-                            search.
+                            {search
+                              ? `No security events match "${search}".`
+                              : "No security events recorded yet."}
                           </td>
                         </tr>
                       )}
@@ -1784,7 +1637,7 @@ function App() {
 
                 <div className="table-footer">
                   <span>
-                    Showing {filteredEvents.length} of {events.length} sample
+                    Showing {filteredEvents.length} of {events.length} security
                     events
                   </span>
 
@@ -1801,9 +1654,9 @@ function App() {
                 </span>
 
                 <span>
-                  <span className="footer-status-dot" /> Prototype UI{" "}
-                  <span className="footer-separator">·</span> Not connected to
-                  live monitoring
+                  <span className="footer-status-dot" /> API connected{" "}
+                  <span className="footer-separator">·</span> Live security
+                  activity available
                 </span>
               </footer>
             </>
