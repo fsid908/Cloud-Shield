@@ -117,8 +117,26 @@ const loginUser = async (email, password, sessionInfo = {}) => {
         refreshToken,
     };
 };
+const updateUserProfile = async (userId, profileData) => {
+    const { fullName } = profileData;
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+        throw new AppError("User not found.", 404);
+    }
+
+    user.fullName = fullName;
+    await user.save();
+
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    return userResponse;
+};
 
 export default {
     registerUser,
     loginUser,
+    updateUserProfile,
 };

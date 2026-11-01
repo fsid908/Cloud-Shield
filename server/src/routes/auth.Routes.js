@@ -25,6 +25,9 @@ router.post( "/login", loginLimiter, validate(LoginSchema), authController.login
 // login me
 router.get("/me", authenticate, authController.me);
 
+// update user profile
+router.put("/update-profile", authenticate, authController.updateProfile);
+
 // admin only test route
 // router.get("/admin-test", authenticate,authorize("admin"), 
 // (req, res) => {

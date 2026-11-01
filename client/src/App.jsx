@@ -1,4 +1,7 @@
-import { createElement, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useMemo, useRef, useState } from "react";
+
+import AuthPage from "./components/AuthPage";
+
 import {
   Activity,
   AlertTriangle,
@@ -28,7 +31,9 @@ import {
   Siren,
   UploadCloud,
   X,
+  LogOut,
 } from "lucide-react";
+
 import {
   Area,
   AreaChart,
@@ -38,208 +43,409 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
 import "./App.css";
+
 const navigation = [
   { label: "Overview", icon: LayoutDashboard },
+
   { label: "Threat detection", icon: ShieldAlert, count: "07" },
+
   { label: "Incidents", icon: Siren, count: "02" },
+
   { label: "Protected files", icon: Files },
+
   { label: "Backup management", icon: Database },
+
   { label: "Recovery center", icon: RefreshCw },
 ];
+
 const secondaryNavigation = [
   { label: "Analytics & reports", icon: Activity },
+
   { label: "Audit logs", icon: FileClock },
+
   { label: "Settings", icon: Settings },
 ];
+
 const metrics = [
   {
     label: "Protected files",
+
     value: "12,480",
+
     change: "+4.8%",
+
     note: "vs. previous period",
+
     icon: Files,
+
     color: "blue",
+
     trend: "up",
   },
+
   {
     label: "Threats detected",
+
     value: "07",
+
     change: "3 new",
+
     note: "in the last 24 hours",
+
     icon: ShieldAlert,
+
     color: "amber",
+
     trend: "down",
   },
+
   {
     label: "Backup success rate",
+
     value: "98.6%",
+
     change: "+1.2%",
+
     note: "vs. previous period",
+
     icon: Database,
+
     color: "teal",
+
     trend: "up",
   },
+
   {
     label: "Open incidents",
+
     value: "02",
+
     change: "Needs review",
+
     note: "awaiting investigation",
+
     icon: AlertTriangle,
+
     color: "red",
+
     trend: "neutral",
   },
 ];
+
 const events = [
   {
     title: "Unusual file modification rate",
+
     asset: "cloud-storage-01",
+
     time: "10:42:18 AM",
+
     severity: "High",
+
     status: "Investigating",
+
     color: "red",
   },
+
   {
     title: "Backup integrity verification",
+
     asset: "backup-vault-02",
+
     time: "10:31:06 AM",
+
     severity: "Info",
+
     status: "Completed",
+
     color: "teal",
   },
+
   {
     title: "Suspicious file extension detected",
+
     asset: "workstation-04",
+
     time: "09:56:42 AM",
+
     severity: "Medium",
+
     status: "Under review",
+
     color: "amber",
   },
+
   {
     title: "Scheduled backup completed",
+
     asset: "cloud-storage-01",
+
     time: "09:30:00 AM",
+
     severity: "Info",
+
     status: "Completed",
+
     color: "teal",
   },
 ];
+
 const activityData = [
   { day: "09 Oct", threats: 3, files: 18 },
+
   { day: "10 Oct", threats: 5, files: 26 },
+
   { day: "11 Oct", threats: 2, files: 16 },
+
   { day: "12 Oct", threats: 8, files: 35 },
+
   { day: "13 Oct", threats: 4, files: 22 },
+
   { day: "14 Oct", threats: 7, files: 29 },
+
   { day: "15 Oct", threats: 3, files: 19 },
 ];
+
 const pageTitles = {
   Overview: [
     "Security overview",
+
     "Monitor your cloud environment and recovery readiness.",
   ],
+
   "Threat detection": [
     "Threat detection",
+
     "Review suspicious activity and detection events.",
   ],
+
   Incidents: [
     "Incident management",
+
     "Investigate security incidents and affected assets.",
   ],
+
   "Protected files": [
     "Protected files",
+
     "Review monitored files and their protection status.",
   ],
+
   "Backup management": [
     "Backup management",
+
     "Monitor backup jobs, storage and verification.",
   ],
+
   "Recovery center": [
     "Recovery center",
+
     "Review recovery points and restoration readiness.",
   ],
+
   "Analytics & reports": [
     "Analytics & reports",
+
     "Explore security and backup performance.",
   ],
+
   "Audit logs": [
     "Audit logs",
+
     "Review recorded security and administrative events.",
   ],
+
   Settings: [
     "Settings",
+
     "Manage your workspace preferences and configuration.",
   ],
 };
+
 function Badge({ children, tone = "neutral" }) {
   return (
     <span className={`badge badge-${tone}`}>
       <span className="badge-dot" />
+
       {children}
     </span>
   );
 }
+
 function MetricCard({ metric }) {
   const Icon = metric.icon;
+
   return (
     <article className="metric-card">
       <div className="metric-top">
         <span className="metric-label">{metric.label}</span>
+
         <span className={`metric-icon metric-icon-${metric.color}`}>
           <Icon size={18} />
         </span>
       </div>
+
       <div className="metric-value">{metric.value}</div>
+
       <div className="metric-foot">
         <span className={`metric-change change-${metric.trend}`}>
           {metric.trend === "up" && <ArrowUpRight size={14} />}
+
           {metric.trend === "down" && <ArrowDownRight size={14} />}
+
           {metric.change}
         </span>
+
         <span className="metric-note">{metric.note}</span>
       </div>
     </article>
   );
 }
+
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const [authLoading, setAuthLoading] = useState(true);
+
+  const [user, setUser] = useState(null);
+
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editFullName, setEditFullName] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkAuthentication = async () => {
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/auth/me`,
+
+          { credentials: "include" },
+        );
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error("Authentication required");
+        }
+
+        if (isMounted) {
+          setUser(result.data?.user ?? result.data);
+
+          setIsAuthenticated(true);
+        }
+      } catch {
+        if (isMounted) {
+          setUser(null);
+
+          setIsAuthenticated(false);
+        }
+      } finally {
+        if (isMounted) setAuthLoading(false);
+      }
+    };
+
+    checkAuthentication();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/auth/logout`,
+
+        {
+          method: "POST",
+
+          credentials: "include",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("Logout failed");
+      }
+
+      setUser(null);
+
+      setIsAuthenticated(false);
+
+      setShowProfileMenu(false);
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
   const [activePage, setActivePage] = useState("Overview");
+
   const [timeRange, setTimeRange] = useState("7 days");
 
   const [search, setSearch] = useState("");
+
   const [showNotifications, setShowNotifications] = useState(false);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const [toast, setToast] = useState("");
+
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
+
   const [activeWorkspace, setActiveWorkspace] = useState(
     "Personal environment",
   );
+
   // File upload preview state
+
   const fileInputRef = useRef(null);
+
   const [selectedFile, setSelectedFile] = useState(null);
+
   const [isDragging, setIsDragging] = useState(false);
+
   const [uploadMessage, setUploadMessage] = useState(
     "Upload UI ready — backend is not connected yet.",
   );
 
   const [scanStatus, setScanStatus] = useState("idle");
+
   const [scanProgress, setScanProgress] = useState(0);
+
   const [scanResult, setScanResult] = useState(null);
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
   const ALLOWED_EXTENSIONS = [
     ".pdf",
+
     ".doc",
+
     ".docx",
+
     ".xls",
+
     ".xlsx",
+
     ".ppt",
+
     ".pptx",
+
     ".txt",
+
     ".csv",
+
     ".jpg",
+
     ".jpeg",
+
     ".png",
+
     ".zip",
   ];
 
@@ -247,32 +453,39 @@ function App() {
     if (!file) return;
 
     const fileName = file.name.toLowerCase();
+
     const isAllowedType = ALLOWED_EXTENSIONS.some((extension) =>
       fileName.endsWith(extension),
     );
 
     if (!isAllowedType) {
       setUploadMessage("Invalid file type. Please select a supported file.");
+
       return;
     }
 
     if (file.size > MAX_FILE_SIZE) {
       setUploadMessage("File is too large. Maximum allowed size is 10 MB.");
+
       return;
     }
 
     if (file.size === 0) {
       setUploadMessage("Empty files cannot be selected.");
+
       return;
     }
 
     setSelectedFile(file);
+
     setUploadMessage(`${file.name} selected successfully. Ready for scanning.`);
   };
 
   const handleDrop = (event) => {
     event.preventDefault();
+
     setIsDragging(false);
+
     handleFileSelect(event.dataTransfer.files?.[0]);
   };
 
@@ -280,19 +493,26 @@ function App() {
     if (!selectedFile || scanStatus === "scanning") return;
 
     setScanStatus("scanning");
+
     setScanProgress(0);
+
     setScanResult(null);
+
     setUploadMessage("Uploading file securely to Cloud-Shield...");
 
     try {
       const formData = new FormData();
+
       formData.append("file", selectedFile);
 
       const response = await fetch(
         `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/files`,
+
         {
           method: "POST",
+
           credentials: "include",
+
           body: formData,
         },
       );
@@ -303,45 +523,139 @@ function App() {
         throw new Error(result.message || "File upload failed.");
       }
 
+      const isQuarantined = result.data?.status === "quarantined";
+
       setScanProgress(100);
       setScanStatus("completed");
+
       setScanResult({
         message: result.message || "File uploaded successfully.",
         file: result.data,
       });
 
       setUploadMessage(
-        `${selectedFile.name} uploaded successfully. Backend file record created.`,
+        isQuarantined
+          ? `${selectedFile.name}: Malware detected! File has been quarantined.`
+          : `${selectedFile.name} uploaded successfully. Backend file record created.`,
       );
     } catch (error) {
       setScanStatus("idle");
+
       setScanProgress(0);
+
       setScanResult(null);
+
       setUploadMessage(error.message || "Upload failed. Please try again.");
     }
   };
 
   const filteredEvents = useMemo(() => {
     const query = search.trim().toLowerCase();
+
     if (!query) return events;
+
     return events.filter((event) =>
       `${event.title} ${event.asset} ${event.severity} ${event.status}`
+
         .toLowerCase()
+
         .includes(query),
     );
   }, [search]);
+
   const selectPage = (label) => {
     setActivePage(label);
+
     setSidebarOpen(false);
+
     setShowNotifications(false);
   };
+
   const notify = (message) => {
     setToast(message);
+
     window.setTimeout(() => setToast(""), 3000);
+  };
+
+  const handleUpdateProfile = async (event) => {
+    event.preventDefault();
+
+    const fullName = editFullName.trim();
+
+    if (!fullName) {
+      setProfileError("Full name is required.");
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileError("");
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/auth/update-profile`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ fullName }),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Profile update failed.");
+      }
+
+      const updatedUser = result.data?.user ?? result.data;
+      setUser(updatedUser);
+      setShowEditProfile(false);
+      notify("Profile updated successfully.");
+    } catch (error) {
+      setProfileError(error.message || "Unable to update profile.");
+    } finally {
+      setProfileSaving(false);
+    }
   };
   const [pageTitle, pageDescription] =
     pageTitles[activePage] ?? pageTitles.Overview;
+
   const currentPage = activePage;
+
+  if (authLoading) {
+    return (
+      <div className="auth-page">
+        <p>Checking authentication...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <AuthPage
+        onLogin={async () => {
+          const response = await fetch(
+            `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/auth/me`,
+
+            { credentials: "include" },
+          );
+
+          const result = await response.json();
+
+          if (!response.ok || !result.success) {
+            throw new Error(result.message || "Unable to load account.");
+          }
+
+          setUser(result.data?.user ?? result.data);
+
+          setIsAuthenticated(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
       {sidebarOpen && (
@@ -351,6 +665,7 @@ function App() {
           onClick={() => setSidebarOpen(false)}
         />
       )}
+
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
         <div className="brand">
           <button
@@ -362,13 +677,16 @@ function App() {
             <span className="brand-mark">
               <ShieldCheck size={23} strokeWidth={2.1} />
             </span>
+
             <span className="brand-copy">
               <span className="brand-name">
                 cloud<span>shield</span>
               </span>
+
               <span className="brand-caption">CLOUD SECURITY PLATFORM</span>
             </span>
           </button>
+
           <button
             type="button"
             className="sidebar-close"
@@ -378,6 +696,7 @@ function App() {
             <X size={18} />
           </button>
         </div>
+
         <div className="workspace-wrap">
           <button
             type="button"
@@ -389,47 +708,61 @@ function App() {
             <div className="workspace-avatar">
               <Cloud size={17} />
             </div>
+
             <div className="workspace-copy">
               <span>Workspace</span>
+
               <strong>{activeWorkspace}</strong>
             </div>
+
             <ChevronDown size={15} className="workspace-chevron" />
           </button>
+
           {showWorkspaceMenu && (
             <div className="workspace-menu">
               <span className="workspace-menu-label">YOUR WORKSPACES</span>
+
               <button
                 type="button"
                 className="workspace-option"
                 onClick={() => {
                   setActiveWorkspace("Personal environment");
+
                   setShowWorkspaceMenu(false);
+
                   notify("Personal environment selected.");
                 }}
               >
                 <Cloud size={17} />
+
                 <span>Personal environment</span>
+
                 {activeWorkspace === "Personal environment" && (
                   <Check size={16} />
                 )}
               </button>
+
               <button
                 type="button"
                 className="workspace-option"
                 onClick={() => {
                   setShowWorkspaceMenu(false);
+
                   notify(
                     "Creating additional workspaces requires backend support.",
                   );
                 }}
               >
                 <span className="workspace-add">+</span>
+
                 <span>Add workspace</span>
               </button>
             </div>
           )}
         </div>
+
         <div className="sidebar-section-label">WORKSPACE</div>
+
         <nav className="sidebar-nav" aria-label="Main navigation">
           {navigation.map(({ label, icon: Icon, count }) => (
             <button
@@ -441,7 +774,9 @@ function App() {
               onClick={() => selectPage(label)}
             >
               {createElement(Icon, { size: 18, strokeWidth: 1.8 })}
+
               <span>{label}</span>
+
               {count && (
                 <span
                   className={`nav-count ${
@@ -454,9 +789,11 @@ function App() {
             </button>
           ))}
         </nav>
+
         <div className="sidebar-section-label sidebar-section-spaced">
           MANAGEMENT
         </div>
+
         <nav className="sidebar-nav" aria-label="Management navigation">
           {secondaryNavigation.map(({ label, icon: Icon }) => (
             <button
@@ -468,39 +805,100 @@ function App() {
               onClick={() => selectPage(label)}
             >
               {createElement(Icon, { size: 18, strokeWidth: 1.8 })}
+
               <span>{label}</span>
             </button>
           ))}
         </nav>
+
         <div className="sidebar-spacer" />
+
         <div className="sidebar-security">
           <div className="security-icon">
             <LockKeyhole size={17} />
           </div>
+
           <strong>Your data, protected.</strong>
+
           <p>
             Keep your recovery points verified and your cloud environment
             monitored.
           </p>
+
           <button type="button" onClick={() => selectPage("Recovery center")}>
             Review recovery <ArrowRight size={14} />
           </button>
         </div>
-        <button
-          type="button"
-          className="profile-card"
-          onClick={() =>
-            notify("Profile settings are part of the upcoming integration.")
-          }
-        >
-          <div className="profile-avatar">FS</div>
-          <div className="profile-copy">
-            <strong>Workspace admin</strong>
-            <span>Administrator</span>
-          </div>
-          <MoreHorizontal size={19} />
+
+        <div className="profile-wrap">
+          <button
+            type="button"
+            className="profile-card"
+            aria-expanded={showProfileMenu}
+            aria-haspopup="true"
+            onClick={() => setShowProfileMenu((open) => !open)}
+          >
+            <div className="profile-avatar">
+              {(user?.fullName || user?.name || "U")
+                .trim()
+                .charAt(0)
+                .toUpperCase()}
+            </div>
+            <div className="profile-copy">
+              <strong>
+                {user?.fullName || user?.name || "Workspace admin"}
+              </strong>
+              <span>{user?.role || "Administrator"}</span>
+            </div>
+            <MoreHorizontal size={19} />
+          </button>
+          {showProfileMenu && (
+            <div className="profile-menu">
+              <div className="profile-menu-header">
+                <div className="profile-menu-avatar">
+                  {(user?.fullName || user?.name || "U")
+                    .trim()
+                    .charAt(0)
+                    .toUpperCase()}
+                </div>
+
+                <div className="profile-menu-identity">
+                  <strong>
+                    {user?.fullName || user?.name || "Workspace admin"}
+                  </strong>
+                  <span>{user?.email || "Email not available"}</span>
+                </div>
+              </div>
+
+              <div className="profile-menu-divider" />
+
+              <div className="profile-menu-details">
+                <span>ACCOUNT ROLE</span>
+                <strong>{user?.role || "Administrator"}</strong>
+              </div>
+              <button
+                type="button"
+                className="profile-edit-button"
+                onClick={() => {
+                  setEditFullName(user?.fullName || user?.name || "");
+                  setProfileError("");
+                  setShowProfileMenu(false);
+                  setShowEditProfile(true);
+                }}
+              >
+                Edit Profile
+              </button>
+            </div>
+          )}
+        </div>
+
+        <button type="button" className="nav-item" onClick={handleLogout}>
+          <LogOut size={18} strokeWidth={1.8} />
+
+          <span>Sign out</span>
         </button>
       </aside>
+
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
@@ -512,23 +910,30 @@ function App() {
             >
               <Menu size={20} />
             </button>
+
             <div className="breadcrumb">
               <span>Workspace</span>
+
               <span className="breadcrumb-separator">/</span>
+
               <strong>{activePage}</strong>
             </div>
           </div>
+
           <div className="topbar-right">
             <label className="global-search">
               <Search size={16} />
+
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search events..."
                 aria-label="Search security events"
               />
+
               <kbd>/</kbd>
             </label>
+
             <div className="notification-wrap">
               <button
                 type="button"
@@ -537,65 +942,85 @@ function App() {
                 onClick={() => setShowNotifications((value) => !value)}
               >
                 <Bell size={19} />
+
                 <span className="notification-dot" />
               </button>
+
               {showNotifications && (
                 <div className="notification-popover">
                   <div className="popover-heading">
                     <strong>Notifications</strong>
+
                     <span>2 new</span>
                   </div>
+
                   <div className="notification-entry">
                     <span className="notification-symbol symbol-red">
                       <AlertTriangle size={16} />
                     </span>
+
                     <div>
                       <strong>Incident requires review</strong>
+
                       <p>Unusual file activity detected.</p>
                     </div>
                   </div>
+
                   <div className="notification-entry">
                     <span className="notification-symbol symbol-teal">
                       <Database size={16} />
                     </span>
+
                     <div>
                       <strong>Backup verified</strong>
+
                       <p>Latest integrity check completed.</p>
                     </div>
                   </div>
                 </div>
               )}
             </div>
+
             <div className="topbar-divider" />
+
             <span className="environment-status">
               <span />
               Demo environment
             </span>
           </div>
         </header>
+
         <div className="page-content">
           {currentPage !== "Overview" ? (
             <section className="panel" style={{ padding: 24 }}>
               <div className="panel-header">
                 <div>
                   <h2>{pageTitle}</h2>
+
                   <p>{pageDescription}</p>
                 </div>
+
                 <ShieldCheck size={24} />
               </div>
+
               {currentPage === "Threat detection" && (
                 <div>
                   <h3>Detected threats</h3>
+
                   {events
+
                     .filter(
                       (event) =>
                         event.color === "red" || event.color === "amber",
                     )
+
                     .map((event) => (
                       <div key={event.title} className="selected-file">
                         <ShieldAlert size={20} />
+
                         <div>
                           <strong>{event.title}</strong>
+
                           <span>
                             {event.severity} · {event.status} · {event.time}
                           </span>
@@ -604,36 +1029,47 @@ function App() {
                     ))}
                 </div>
               )}
+
               {currentPage === "Incidents" && (
                 <div>
                   <h3>Open incidents</h3>
+
                   <p>Unusual file modification rate — Investigating</p>
+
                   <p>Suspicious file extension detected — Under review</p>
                 </div>
               )}
+
               {currentPage === "Protected files" && (
                 <p>
                   File inventory is currently demo-only. Backend connection is
                   pending.
                 </p>
               )}
+
               {currentPage === "Backup management" && (
                 <div>
                   <h3>Backup summary</h3>
+
                   <p>Successful jobs: 286 (demo)</p>
+
                   <p>Failed jobs: 04 (demo)</p>
+
                   <p>Success rate: 98.6% (demo)</p>
                 </div>
               )}
+
               {currentPage === "Recovery center" && (
                 <p>Recovery actions are not connected to the backend yet.</p>
               )}
+
               {currentPage === "Analytics & reports" && (
                 <p>
                   Security activity chart is available on the Overview
                   dashboard.
                 </p>
               )}
+
               {currentPage === "Audit logs" && (
                 <div>
                   {events.map((event) => (
@@ -643,9 +1079,11 @@ function App() {
                   ))}
                 </div>
               )}
+
               {currentPage === "Settings" && (
                 <p>Workspace settings are currently a frontend preview.</p>
               )}
+
               <button
                 type="button"
                 className="button button-secondary"
@@ -663,9 +1101,12 @@ function App() {
                     <span className="eyebrow-line" />
                     SECURITY OPERATIONS
                   </div>
+
                   <h1>{pageTitle}</h1>
+
                   <p>{pageDescription}</p>
                 </div>
+
                 <div className="heading-actions">
                   <button
                     type="button"
@@ -675,6 +1116,7 @@ function App() {
                     <RefreshCw size={15} />
                     Refresh
                   </button>
+
                   <button
                     type="button"
                     className="button button-primary"
@@ -685,14 +1127,17 @@ function App() {
                   </button>
                 </div>
               </div>
+
               <div className="demo-notice">
                 <span className="demo-notice-icon">
                   <CircleHelp size={16} />
                 </span>
+
                 <span>
                   <strong>Preview mode</strong> — The figures and events shown
                   here are illustrative demo data, not live security telemetry.
                 </span>
+
                 <button
                   type="button"
                   aria-label="Dismiss preview notice"
@@ -703,18 +1148,20 @@ function App() {
                   <X size={16} />
                 </button>
               </div>
-              {/* File upload preview */}
 
               <section className="panel upload-panel">
                 <div className="panel-header">
                   <div>
                     <h2>Upload a file</h2>
+
                     <p>
                       Select a file for the security-scanning workflow preview.
                     </p>
                   </div>
+
                   <UploadCloud size={22} />
                 </div>
+
                 <input
                   ref={fileInputRef}
                   id="cloud-shield-file-input"
@@ -723,9 +1170,11 @@ function App() {
                   className="upload-input"
                   onChange={(event) => {
                     handleFileSelect(event.target.files?.[0]);
+
                     event.target.value = "";
                   }}
                 />
+
                 {!selectedFile ? (
                   <label
                     htmlFor="cloud-shield-file-input"
@@ -734,14 +1183,18 @@ function App() {
                     }`}
                     onDragOver={(event) => {
                       event.preventDefault();
+
                       setIsDragging(true);
                     }}
                     onDragLeave={() => setIsDragging(false)}
                     onDrop={handleDrop}
                   >
                     <UploadCloud size={30} />
+
                     <strong>Drag and drop a file here</strong>
+
                     <span>or click to browse your computer</span>
+
                     <span className="upload-button-label">Choose file</span>
                   </label>
                 ) : (
@@ -750,42 +1203,52 @@ function App() {
                       <span className="file-ready-icon">
                         <File size={23} />
                       </span>
+
                       <div className="file-ready-copy">
                         <strong>File ready to scan</strong>
+
                         <span>
                           Your file is selected and ready for the next step.
                         </span>
                       </div>
+
                       <span className="file-ready-badge">Selected</span>
                     </div>
 
                     <div className="selected-file">
                       <File size={20} />
+
                       <div>
                         <strong>{selectedFile.name}</strong>
+
                         <span>
                           {selectedFile.size < 1024 * 1024
                             ? `${(selectedFile.size / 1024).toFixed(1)} KB`
                             : `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`}
                         </span>
                       </div>
+
                       <button
                         type="button"
                         className="button button-secondary replace-file-button"
                         onClick={() =>
                           document
+
                             .getElementById("cloud-shield-file-input")
+
                             ?.click()
                         }
                       >
                         Replace file
                       </button>
+
                       <button
                         type="button"
                         className="icon-button"
                         aria-label="Remove selected file"
                         onClick={() => {
                           setSelectedFile(null);
+
                           setUploadMessage("No file selected.");
                         }}
                       >
@@ -801,6 +1264,7 @@ function App() {
                         disabled={!selectedFile || scanStatus === "scanning"}
                       >
                         <UploadCloud size={17} />
+
                         {scanStatus === "scanning"
                           ? `Scanning... ${scanProgress}%`
                           : scanStatus === "completed"
@@ -813,6 +1277,7 @@ function App() {
                       <div className="scan-progress-card" role="status">
                         <div className="scan-progress-heading">
                           <strong>Scanning file</strong>
+
                           <span>{scanProgress}%</span>
                         </div>
 
@@ -834,20 +1299,42 @@ function App() {
                     )}
 
                     {scanStatus === "completed" && scanResult && (
-                      <div className="scan-result-card" role="status">
+                      <div
+                        className={`scan-result-card ${
+                          scanResult.file?.status === "quarantined"
+                            ? "scan-result-infected"
+                            : "scan-result-safe"
+                        }`}
+                        role="status"
+                      >
                         <div className="scan-result-heading">
-                          <span className="scan-result-icon">✔</span>
+                          <span className="scan-result-icon">
+                            {scanResult.file?.status === "quarantined"
+                              ? "!"
+                              : "✔"}
+                          </span>
+
                           <div>
-                            <strong>File uploaded successfully</strong>
+                            <strong>
+                              {scanResult.file?.status === "quarantined"
+                                ? "Malware detected!"
+                                : "File uploaded successfully"}
+                            </strong>
                             <p>{scanResult.message}</p>
                           </div>
                         </div>
 
                         <div className="scan-result-notice">
-                          <span>Upload verified</span>
+                          <span>
+                            {scanResult.file?.status === "quarantined"
+                              ? "File quarantined"
+                              : "Upload verified"}
+                          </span>
+
                           <p>
-                            Cloud-Shield accepted the file and returned its
-                            metadata. This does not yet confirm a malware scan.
+                            {scanResult.file?.status === "quarantined"
+                              ? "ClamAV detected malware. The file has been isolated in quarantine and no trusted backup was created."
+                              : "Cloud-Shield scanned the uploaded file and returned its security status."}
                           </p>
                         </div>
                       </div>
@@ -877,12 +1364,12 @@ function App() {
                         ? "✓ File Validated"
                         : "ⓘ Upload Status"}
                   </strong>
+
                   <span>{uploadMessage}</span>
                 </div>
 
                 <p className="upload-disclaimer">
-                  Files are uploaded to the backend. Malware scanning status is
-                  not confirmed by upload success alone.
+                  Files are uploaded to the backend. Malware scanning status is not confirmed by upload success alone.
                 </p>
               </section>
 
@@ -890,23 +1377,29 @@ function App() {
                 <div className="protection-symbol">
                   <ShieldCheck size={25} />
                 </div>
+
                 <div className="protection-copy">
                   <div className="protection-title-row">
                     <h2>Protection overview</h2>
+
                     <Badge tone="success">Demo status: healthy</Badge>
                   </div>
+
                   <p>
                     Your sample workspace is ready for monitoring. Review open
                     incidents and verify your recovery points.
                   </p>
                 </div>
+
                 <div className="protection-meta">
                   <span>WORKSPACE STATUS</span>
+
                   <strong>
                     <span className="status-pulse" />
                     Operational (demo)
                   </strong>
                 </div>
+
                 <button
                   type="button"
                   className="banner-arrow"
@@ -916,18 +1409,22 @@ function App() {
                   <ArrowRight size={19} />
                 </button>
               </section>
+
               <section className="metrics-grid" aria-label="Security metrics">
                 {metrics.map((metric) => (
                   <MetricCard key={metric.label} metric={metric} />
                 ))}
               </section>
+
               <section className="dashboard-grid">
                 <article className="panel activity-panel">
                   <div className="panel-header">
                     <div>
                       <h2>Security activity</h2>
+
                       <p>Detection events over time</p>
                     </div>
+
                     <label className="select-wrap">
                       <select
                         value={timeRange}
@@ -935,22 +1432,28 @@ function App() {
                         aria-label="Chart time range"
                       >
                         <option>7 days</option>
+
                         <option>30 days</option>
+
                         <option>90 days</option>
                       </select>
+
                       <ChevronDown size={14} />
                     </label>
                   </div>
+
                   <div className="chart-legend">
                     <span>
                       <i className="legend-dot legend-threat" />
                       Threat events
                     </span>
+
                     <span>
                       <i className="legend-dot legend-files" />
                       File activity
                     </span>
                   </div>
+
                   <div className="activity-chart">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart
@@ -970,12 +1473,14 @@ function App() {
                               stopColor="#6692ff"
                               stopOpacity={0.22}
                             />
+
                             <stop
                               offset="95%"
                               stopColor="#6692ff"
                               stopOpacity={0}
                             />
                           </linearGradient>
+
                           <linearGradient
                             id="fileFill"
                             x1="0"
@@ -988,6 +1493,7 @@ function App() {
                               stopColor="#52c8ba"
                               stopOpacity={0.12}
                             />
+
                             <stop
                               offset="95%"
                               stopColor="#52c8ba"
@@ -995,11 +1501,13 @@ function App() {
                             />
                           </linearGradient>
                         </defs>
+
                         <CartesianGrid
                           stroke="#e9edf3"
                           strokeDasharray="3 4"
                           vertical={false}
                         />
+
                         <XAxis
                           dataKey="day"
                           tick={{ fill: "#8792a5", fontSize: 11 }}
@@ -1007,18 +1515,23 @@ function App() {
                           axisLine={false}
                           dy={10}
                         />
+
                         <YAxis
                           tick={{ fill: "#8792a5", fontSize: 11 }}
                           tickLine={false}
                           axisLine={false}
                         />
+
                         <Tooltip
                           contentStyle={{
                             border: "1px solid #e5eaf1",
+
                             borderRadius: 10,
+
                             fontSize: 12,
                           }}
                         />
+
                         <Area
                           type="monotone"
                           dataKey="files"
@@ -1027,6 +1540,7 @@ function App() {
                           strokeWidth={2}
                           fill="url(#fileFill)"
                         />
+
                         <Area
                           type="monotone"
                           dataKey="threats"
@@ -1038,11 +1552,13 @@ function App() {
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
+
                   <div className="chart-footer">
                     <span>
                       <Activity size={14} />
                       Activity is based on sample events
                     </span>
+
                     <button
                       type="button"
                       onClick={() => selectPage("Analytics & reports")}
@@ -1051,12 +1567,15 @@ function App() {
                     </button>
                   </div>
                 </article>
+
                 <article className="panel backup-panel">
                   <div className="panel-header">
                     <div>
                       <h2>Backup health</h2>
+
                       <p>Sample recovery readiness</p>
                     </div>
+
                     <button
                       type="button"
                       className="icon-button subtle-icon"
@@ -1070,52 +1589,65 @@ function App() {
                       <MoreHorizontal size={19} />
                     </button>
                   </div>
+
                   <div className="backup-score">
                     <div className="score-ring">
                       <div>
                         <strong>
                           98.6<span>%</span>
                         </strong>
+
                         <small>Success rate</small>
                       </div>
                     </div>
+
                     <div className="backup-score-copy">
                       <Badge tone="success">Healthy (demo)</Badge>
+
                       <p>
                         Sample backup performance for the selected reporting
                         period.
                       </p>
                     </div>
                   </div>
+
                   <div className="backup-stats">
                     <div>
                       <span>
                         <i className="mini-dot dot-green" />
                         Successful jobs
                       </span>
+
                       <strong>286</strong>
                     </div>
+
                     <div>
                       <span>
                         <i className="mini-dot dot-amber" />
                         Failed jobs
                       </span>
+
                       <strong>04</strong>
                     </div>
+
                     <div>
                       <span>
                         <i className="mini-dot dot-blue" />
                         Storage used
                       </span>
+
                       <strong>64.2 GB</strong>
                     </div>
                   </div>
+
                   <div className="last-backup">
                     <span className="last-backup-icon">
                       <HardDrive size={17} />
                     </span>
+
                     <div>
                       <span>Last successful backup</span>
+
                       <strong>
                         Today, 09:30 AM{" "}
                         <span className="verified-check">
@@ -1123,8 +1655,10 @@ function App() {
                         </span>
                       </strong>
                     </div>
+
                     <Badge tone="success">Sample</Badge>
                   </div>
+
                   <button
                     type="button"
                     className="text-link backup-link"
@@ -1134,12 +1668,15 @@ function App() {
                   </button>
                 </article>
               </section>
+
               <section className="panel events-panel">
                 <div className="panel-header events-heading">
                   <div>
                     <h2>Recent security events</h2>
+
                     <p>Latest entries from the sample event feed</p>
                   </div>
+
                   <button
                     type="button"
                     className="button button-secondary button-small"
@@ -1148,18 +1685,25 @@ function App() {
                     View all events <ArrowRight size={14} />
                   </button>
                 </div>
+
                 <div className="table-wrap">
                   <table>
                     <thead>
                       <tr>
                         <th>EVENT</th>
+
                         <th>AFFECTED ASSET</th>
+
                         <th>TIME</th>
+
                         <th>SEVERITY</th>
+
                         <th>STATUS</th>
+
                         <th aria-label="Actions" />
                       </tr>
                     </thead>
+
                     <tbody>
                       {filteredEvents.map((event) => (
                         <tr key={`${event.title}-${event.time}`}>
@@ -1176,13 +1720,17 @@ function App() {
                                   <ShieldCheck size={16} />
                                 )}
                               </span>
+
                               <span>{event.title}</span>
                             </div>
                           </td>
+
                           <td>
                             <code>{event.asset}</code>
                           </td>
+
                           <td className="event-time">{event.time}</td>
+
                           <td>
                             <Badge
                               tone={
@@ -1196,14 +1744,17 @@ function App() {
                               {event.severity}
                             </Badge>
                           </td>
+
                           <td>
                             <span
                               className={`status-text status-${event.color}`}
                             >
                               <span />
+
                               {event.status}
                             </span>
                           </td>
+
                           <td>
                             <button
                               type="button"
@@ -1218,6 +1769,7 @@ function App() {
                           </td>
                         </tr>
                       ))}
+
                       {filteredEvents.length === 0 && (
                         <tr>
                           <td colSpan="6" className="empty-state">
@@ -1229,21 +1781,25 @@ function App() {
                     </tbody>
                   </table>
                 </div>
+
                 <div className="table-footer">
                   <span>
                     Showing {filteredEvents.length} of {events.length} sample
                     events
                   </span>
+
                   <button type="button" onClick={() => setSearch("")}>
                     Clear search <X size={13} />
                   </button>
                 </div>
               </section>
+
               <footer className="page-footer">
                 <span>
                   Cloud-Shield <span className="footer-separator">·</span>{" "}
                   Security &amp; recovery workspace
                 </span>
+
                 <span>
                   <span className="footer-status-dot" /> Prototype UI{" "}
                   <span className="footer-separator">·</span> Not connected to
@@ -1254,10 +1810,90 @@ function App() {
           )}
         </div>
       </main>
+
+      {showEditProfile && (
+        <div className="profile-modal-backdrop">
+          <section
+            className="profile-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-modal-title"
+          >
+            <div className="profile-modal-header">
+              <div>
+                <span>ACCOUNT SETTINGS</span>
+                <h2 id="profile-modal-title">Edit Profile</h2>
+                <p>Update your personal information.</p>
+              </div>
+
+              <button
+                type="button"
+                className="profile-modal-close"
+                aria-label="Close modal"
+                onClick={() => setShowEditProfile(false)}
+              >
+                <X size={19} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateProfile}>
+              <label className="profile-form-field">
+                Full Name
+                <input
+                  type="text"
+                  value={editFullName}
+                  onChange={(event) => setEditFullName(event.target.value)}
+                  placeholder="Enter your full name"
+                  maxLength={80}
+                  required
+                />
+              </label>
+
+              <label className="profile-form-field">
+                Email Address
+                <input type="email" value={user?.email || ""} disabled />
+              </label>
+
+              <label className="profile-form-field">
+                Account Role
+                <input type="text" value={user?.role || "User"} disabled />
+              </label>
+
+              {profileError && (
+                <p className="profile-form-error" role="alert">
+                  {profileError}
+                </p>
+              )}
+
+              <div className="profile-modal-actions">
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => setShowEditProfile(false)}
+                  disabled={profileSaving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="button button-primary"
+                  disabled={profileSaving}
+                >
+                  {profileSaving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
       {toast && (
         <div className="toast-message">
           <Check size={17} />
+
           {toast}
+
           <button
             type="button"
             aria-label="Dismiss notification"
@@ -1270,4 +1906,5 @@ function App() {
     </div>
   );
 }
+
 export default App;

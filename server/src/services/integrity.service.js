@@ -25,6 +25,14 @@ const checkFileItegrity = async (fileId, userId) => {
         );
     }
 
+    // Only safe files can undergo integrity verification.
+if (file.status !== "safe") {
+    throw new AppError(
+        "Integrity check is only available for safe files.",
+        409
+    );
+}
+
     // build the physical path from server controlled file name
     const filePath = path.join(
         UPLOAD_DIRECTORY,
