@@ -202,4 +202,5 @@ const getUserSecurityEvents = async (userId, limit = 20) => {
 export default {
     createSecurityEvent,
     getSecurityEvents,
+    getUserSecurityEvents,
 };
