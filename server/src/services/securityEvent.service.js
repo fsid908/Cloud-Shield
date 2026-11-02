@@ -168,7 +168,6 @@ const getSecurityEvents = async ({
 
     const [events, total] = await Promise.all([
         SecurityEvent.find(filter)
-    .populate("fileId", "originalName storedName")
     .sort({ createdAt: -1, _id: -1 })
     .skip((page - 1) * limit)
     .limit(limit)
