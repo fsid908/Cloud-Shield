@@ -6,6 +6,7 @@ import test from "node:test";
 import File from "../src/models/file.model.js";
 import fileService from "../src/services/file.service.js";
 import fileActivityService from "../src/services/fileActivity.service.js";
+import clamavService from "../src/services/clamav.service.js";
 
 /**
  * Creates a valid plain-text upload for testing.
@@ -21,6 +22,24 @@ const createUploadedFile = () => {
         size: buffer.length,
         buffer,
     };
+};
+
+/**
+ * Mocks ClamAV to simulate a clean file scan.
+ * Unit tests should not depend on an external ClamAV daemon.
+ */
+const mockClamAV = (t) => {
+    t.mock.method(
+        clamavService,
+        "scanBuffer",
+        async (buffer) => {
+            assert.ok(Buffer.isBuffer(buffer));
+
+            return {
+                status: "safe",
+            };
+        }
+    );
 };
 
 /**
@@ -91,6 +110,8 @@ const mockFilesystem = (t, options = {}) => {
 };
 
 test("creates the current file, trusted backup, metadata, and activity", async (t) => {
+    mockClamAV(t);
+
     const filesystem = mockFilesystem(t);
     const uploadedFile = createUploadedFile();
 
@@ -136,6 +157,8 @@ test("creates the current file, trusted backup, metadata, and activity", async (
 });
 
 test("cleans up the current file and partial backup when backup writing fails", async (t) => {
+    mockClamAV(t);
+
     const filesystem = mockFilesystem(t, {
         failBackupWrite: true,
     });
@@ -165,6 +188,8 @@ test("cleans up the current file and partial backup when backup writing fails", 
 });
 
 test("cleans up both files when database record creation fails", async (t) => {
+    mockClamAV(t);
+
     const filesystem = mockFilesystem(t);
 
     t.mock.method(File, "create", async () => {
@@ -187,6 +212,8 @@ test("cleans up both files when database record creation fails", async (t) => {
 });
 
 test("attempts database rollback when activity logging fails", async (t) => {
+    mockClamAV(t);
+
     const filesystem = mockFilesystem(t);
 
     const createdDocument = {
@@ -241,6 +268,8 @@ test("attempts database rollback when activity logging fails", async (t) => {
 test(
     "preserves both files when database rollback fails",
     async (t) => {
+        mockClamAV(t);
+
         const filesystem = mockFilesystem(t);
 
         const uploadedFile = createUploadedFile();
