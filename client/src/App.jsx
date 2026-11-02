@@ -263,7 +263,7 @@ try {
   setDashboardData({
     activity: activity.data,
     detection: detection.data,
-    events: events.data,
+    events: events.data.events,
   });
 } catch (error) {
   if (error.name !== "AbortError") {
