@@ -1,6 +1,7 @@
 import detectionService from "../services/detection.service.js";
 import { sendSuccess } from "../utils/response.js";
 import detectionEngineService from "../services/detectionEngine.service.js";
+import securityEventService from "../services/securityEvent.service.js";
 
 const getRecentActivity = async (req, res, next) => {
     try{
@@ -39,8 +40,24 @@ const detectSuspiciousActivity = async (req, res, next) => {
         next(error);
     }
 };
+const getSecurityEvents = async (req, res, next) => {
+    try {
+        const userId = req.user._id;
 
+        const events = await securityEventService.getUserSecurityEvents(userId);
+
+        return sendSuccess(
+            res,
+            200,
+            "Security events retrieved successfully.",
+            events
+        );
+    } catch (error) {
+        next(error);
+    }
+};
 export default {
     getRecentActivity,
     detectSuspiciousActivity,
+    getSecurityEvents,
 };

@@ -1,4 +1,5 @@
-import SecurityEvent from "../models/securityEvent.model.js";
+
+import FileActivity from "../models/fileActivity.model.js";
 import AppError from "../utils/AppError.js";
 import riskScorer from "../utils/riskScorer.js";
 
@@ -18,44 +19,40 @@ const getRecentIntegrityActivity = async (userId, windowSeconds = 30) => {
         );
     }
 
-    const windowStart = new Date(
-        Date.now() - windowSeconds * 1000
-    );
+    const windowStart = new Date(Date.now() - windowSeconds * 1000);
 
-    const events = await SecurityEvent.find({
+    const activities = await FileActivity.find({
         userId,
-        eventType: "integrity_violation",
-        createdAt: {
-            $gte: windowStart,
-        },
+        createdAt: { $gte: windowStart },
     })
-        .select("fileId previousHash currentHash createdAt riskScore")
+        .select("fileId activityType previousHash currentHash createdAt")
         .sort({ createdAt: -1 })
         .lean();
 
-    const uniqueFiles = new Set(
-        events.map((event) => event.fileId.toString())
+    const modifications = activities.filter(
+        (activity) => activity.activityType === "modified"
     );
 
-    const uniqueFilesModified = uniqueFiles.size;
-    const totalEvents = events.length;
+    const uniqueFilesModified = new Set(
+        modifications
+            .filter((activity) => activity.fileId)
+            .map((activity) => String(activity.fileId))
+    ).size;
 
     const risk = riskScorer.calculateRiskScore({
         uniqueFilesModified,
-        totalEvents,
+        totalEvents: modifications.length,
         windowSeconds,
     });
 
-    const riskLevel = riskScorer.getRiskLevel(risk.score);
-
     return {
         windowSeconds,
-        totalEvents,
+        totalEvents: activities.length,
         uniqueFilesModified,
         riskScore: risk.score,
-        riskLevel,
+        riskLevel: riskScorer.getRiskLevel(risk.score),
         reasons: risk.reasons,
-        events,
+        events: activities,
     };
 };
 

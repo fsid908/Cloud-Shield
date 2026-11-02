@@ -843,7 +843,6 @@ button {
   gap: 13px;
   padding: 17px 0;
   border-top: 1px solid #29354a;
-  border-bottom: 1px solid #29354a;
 }
 .backup-stats > div {
   display: flex;
