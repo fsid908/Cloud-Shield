@@ -343,3 +343,152 @@ describe("securityEvent.createSecurityEvent", () => {
         );
     });
 });
+
+describe("securityEvent.getSecurityEvents", () => {
+    afterEach(() => {
+        mock.restoreAll();
+    });
+
+    it("should reject a missing user ID", async () => {
+        await assert.rejects(
+            securityEventService.getSecurityEvents({
+                userId: null,
+            }),
+            {
+                message: "User ID is required.",
+                statusCode: 400,
+            }
+        );
+    });
+
+    it("should reject invalid page values", async () => {
+        for (const page of [0, -1, 1.5, NaN, Infinity]) {
+            await assert.rejects(
+                securityEventService.getSecurityEvents({
+                    userId: "user-1",
+                    page,
+                }),
+                {
+                    message: "Page must be a positive integer.",
+                    statusCode: 400,
+                }
+            );
+        }
+    });
+
+    it("should reject invalid limits", async () => {
+        for (const limit of [0, -1, 1.5, 101, NaN, Infinity]) {
+            await assert.rejects(
+                securityEventService.getSecurityEvents({
+                    userId: "user-1",
+                    limit,
+                }),
+                {
+                    message:
+                        "Limit must be an integer between 1 and 100.",
+                    statusCode: 400,
+                }
+            );
+        }
+    });
+
+    it("should return paginated events scoped to the requested user", async () => {
+        const events = [
+            { _id: "event-2", userId: "user-1" },
+            { _id: "event-1", userId: "user-1" },
+        ];
+
+        const query = {
+            sort: mock.fn(() => query),
+            skip: mock.fn(() => query),
+            limit: mock.fn(() => query),
+            lean: mock.fn(async () => events),
+        };
+
+        const findMock = mock.method(
+            SecurityEvent,
+            "find",
+            (filter) => {
+                assert.deepEqual(filter, {
+                    userId: "user-1",
+                });
+
+                return query;
+            }
+        );
+
+        const countMock = mock.method(
+            SecurityEvent,
+            "countDocuments",
+            async (filter) => {
+                assert.deepEqual(filter, {
+                    userId: "user-1",
+                });
+
+                return 12;
+            }
+        );
+
+        const result =
+            await securityEventService.getSecurityEvents({
+                userId: "user-1",
+                page: 2,
+                limit: 2,
+            });
+
+        assert.deepEqual(result, {
+            events,
+            pagination: {
+                page: 2,
+                limit: 2,
+                total: 12,
+                totalPages: 6,
+            },
+        });
+
+        assert.deepEqual(
+            query.sort.mock.calls[0].arguments[0],
+            { createdAt: -1, _id: -1 }
+        );
+
+        assert.equal(
+            query.skip.mock.calls[0].arguments[0],
+            2
+        );
+
+        assert.equal(
+            query.limit.mock.calls[0].arguments[0],
+            2
+        );
+
+        assert.equal(findMock.mock.callCount(), 1);
+        assert.equal(countMock.mock.callCount(), 1);
+    });
+
+    it("should propagate database errors", async () => {
+        const databaseError = new Error(
+            "database unavailable"
+        );
+
+        mock.method(
+            SecurityEvent,
+            "find",
+            () => {
+                throw databaseError;
+            }
+        );
+
+        mock.method(
+            SecurityEvent,
+            "countDocuments",
+            async () => 0
+        );
+
+        await assert.rejects(
+            securityEventService.getSecurityEvents({
+                userId: "user-1",
+            }),
+            (error) => error === databaseError
+        );
+    });
+});

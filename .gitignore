@@ -20,6 +20,8 @@ server/uploads/
 client/.env
 server/.env
 .env
+# Test environment
+server/.env.test
 
 # ==========================
 # Logs
