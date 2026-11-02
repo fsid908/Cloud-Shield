@@ -6,16 +6,21 @@ import authenticate from "../middleware/auth.middleware.js";
 import refreshController from "../controllers/refresh.controller.js";
 // import authenticate from "../middleware/authorize.middleware.js"; //see later
 import authorize from "../middleware/authorize.middleware.js";
-
+import {
+    loginLimiter,
+    registerLimiter,
+    refreshLimiter,
+    logoutLimiter,
+} from "../middleware/rateLimit.middleware.js";
 
 //router 
 const router = Router();
 
 // register route
-router.post("/register", validate(registerSchema), authController.register);
+router.post("/register", registerLimiter, validate(registerSchema), authController.register);
 
 //login route 
-router.post( "/login", validate(LoginSchema), authController.login);
+router.post( "/login", loginLimiter, validate(LoginSchema), authController.login);
 
 // login me
 router.get("/me", authenticate, authController.me);
@@ -33,9 +38,9 @@ router.put("/update-profile", authenticate, authController.updateProfile);
 // });
 
 //logout
-router.post("/logout", authController.logout)
+router.post("/logout", logoutLimiter, authController.logout)
 
 // refresh access token
-router.post("/refresh", refreshController.refresh)
+router.post("/refresh", refreshLimiter, refreshController.refresh)
 
 export default router; 

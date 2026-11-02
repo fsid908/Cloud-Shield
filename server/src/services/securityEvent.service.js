@@ -131,6 +131,61 @@ const createSecurityEvent = async ({
         throw error;
     }
 };
+const getSecurityEvents = async ({
+    userId,
+    page = 1,
+    limit = 10,
+}) => {
+    if (!userId) {
+        throw new AppError(
+            "User ID is required.",
+            400
+        );
+    }
+
+    if (
+        !Number.isSafeInteger(page) ||
+        page < 1
+    ) {
+        throw new AppError(
+            "Page must be a positive integer.",
+            400
+        );
+    }
+
+    if (
+        !Number.isSafeInteger(limit) ||
+        limit < 1 ||
+        limit > 100
+    ) {
+        throw new AppError(
+            "Limit must be an integer between 1 and 100.",
+            400
+        );
+    }
+
+    const filter = { userId };
+
+    const [events, total] = await Promise.all([
+        SecurityEvent.find(filter)
+            .sort({ createdAt: -1, _id: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit)
+            .lean(),
+
+        SecurityEvent.countDocuments(filter),
+    ]);
+
+    return {
+        events,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+        },
+    };
+};
 
 const getUserSecurityEvents = async (userId, limit = 20) => {
     if (!userId) {
@@ -146,5 +201,5 @@ const getUserSecurityEvents = async (userId, limit = 20) => {
 
 export default {
     createSecurityEvent,
-    getUserSecurityEvents,
+    getSecurityEvents,
 };
