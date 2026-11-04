@@ -172,6 +172,7 @@ function App() {
   const [user, setUser] = useState(null);
 
   const [dashboardData, setDashboardData] = useState(null);
+  const [monitoringStatus, setMonitoringStatus] = useState("unavailable");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -225,56 +226,69 @@ function App() {
     setDashboardError("");
 
     const base = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-try {
-  const [activityResponse, detectionResponse, eventsResponse] =
-    await Promise.all([
-      fetch(`${base}/security/activity`, {
-        credentials: "include",
-        signal,
-      }),
-      fetch(`${base}/security/detection`, {
-        credentials: "include",
-        signal,
-      }),
-      fetch(`${base}/security/events`, {
-        credentials: "include",
-        signal,
-      }),
-    ]);
+    try {
+      const [
+        activityResponse,
+        detectionResponse,
+        eventsResponse,
+        healthResponse,
+      ] = await Promise.all([
+        fetch(`${base}/security/activity`, {
+          credentials: "include",
+          signal,
+        }),
+        fetch(`${base}/security/detection`, {
+          credentials: "include",
+          signal,
+        }),
+        fetch(`${base}/security/events`, {
+          credentials: "include",
+          signal,
+        }),
+        fetch(`${base}/health`, {
+          credentials: "include",
+          signal,
+        }),
+      ]);
 
-  const [activity, detection, events] = await Promise.all([
-    activityResponse.json(),
-    detectionResponse.json(),
-    eventsResponse.json(),
-  ]);
+      const [activity, detection, events, health] = await Promise.all([
+        activityResponse.json(),
+        detectionResponse.json(),
+        eventsResponse.json(),
+        healthResponse.json(),
+      ]);
 
-  if (!activityResponse.ok || !activity.success) {
-    throw new Error(activity.message || "Failed to load activity.");
-  }
+      if (!activityResponse.ok || !activity.success) {
+        throw new Error(activity.message || "Failed to load activity.");
+      }
 
-  if (!detectionResponse.ok || !detection.success) {
-    throw new Error(detection.message || "Failed to load detection data.");
-  }
+      if (!detectionResponse.ok || !detection.success) {
+        throw new Error(detection.message || "Failed to load detection data.");
+      }
 
-  if (!eventsResponse.ok || !events.success) {
-    throw new Error(events.message || "Failed to load security events.");
-  }
+      if (!eventsResponse.ok || !events.success) {
+        throw new Error(events.message || "Failed to load security events.");
+      }
+      setMonitoringStatus(
+        healthResponse.ok && health.success
+          ? (health.data?.monitoring ?? "unavailable")
+          : "unavailable",
+      );
 
-  setDashboardData({
-    activity: activity.data,
-    detection: detection.data,
-    events: events.data.events,
-  });
-} catch (error) {
-  if (error.name !== "AbortError") {
-    setDashboardError(error.message);
-  }
-} finally {
-  if (!signal?.aborted) {
-    setDashboardLoading(false);
-  }
-}
-
+      setDashboardData({
+        activity: activity.data,
+        detection: detection.data,
+        events: events.data.events,
+      });
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        setDashboardError(error.message);
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setDashboardLoading(false);
+      }
+    }
   };
 
   useEffect(() => {
@@ -515,31 +529,35 @@ try {
       trend: "neutral",
     },
   ];
-const events = (dashboardData?.events ?? []).map((event) => {
-  const riskScore = Number(event.riskScore ?? 0);
+  const events = (dashboardData?.events ?? []).map((event) => {
+    const riskScore = Number(event.riskScore ?? 0);
 
-  const color =
-    riskScore >= 70 ? "red" : riskScore >= 40 ? "amber" : "teal";
+    const color = riskScore >= 70 ? "red" : riskScore >= 40 ? "amber" : "teal";
 
-  const severity =
-    riskScore >= 70 ? "High" : riskScore >= 40 ? "Medium" : "Low";
+    const severity =
+      riskScore >= 70 ? "High" : riskScore >= 40 ? "Medium" : "Low";
 
-  const timestamp = event.createdAt ?? event.updatedAt;
+    const timestamp = event.createdAt ?? event.updatedAt;
 
-  return {
-    title: event.reason || event.detectionType || event.eventType || "Security event",
-    asset:
-      event.fileId?.originalName ||
-      event.fileId?.storedName ||
-      "Unknown file",
-    time: timestamp ? new Date(timestamp).toLocaleString() : "—",
-    severity,
-    status: event.eventType === "suspicious_activity"
-      ? "Threat detected"
-      : "Recorded",
-    color,
-  };
-});
+    return {
+      title:
+        event.reason ||
+        event.detectionType ||
+        event.eventType ||
+        "Security event",
+      asset:
+        event.fileId?.originalName ||
+        event.fileId?.storedName ||
+        "Unknown file",
+      time: timestamp ? new Date(timestamp).toLocaleString() : "—",
+      severity,
+      status:
+        event.eventType === "suspicious_activity"
+          ? "Threat detected"
+          : "Recorded",
+      color,
+    };
+  });
 
   const filteredEvents = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -1377,7 +1395,13 @@ const events = (dashboardData?.events ?? []).map((event) => {
                   <div className="protection-title-row">
                     <h2>Protection overview</h2>
 
-                    <Badge tone="neutral">Monitoring status unavailable</Badge>
+                    <Badge
+                      tone={
+                        monitoringStatus === "active" ? "success" : "neutral"
+                      }
+                    >
+                      Monitoring {monitoringStatus}
+                    </Badge>
                   </div>
 
                   <p>

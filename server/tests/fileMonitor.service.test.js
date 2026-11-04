@@ -110,12 +110,20 @@ const createHarness = async (t, { contents = "trusted content" } = {}) => {
 test("starts a single watcher and stops it safely more than once", async (t) => {
   const harness = await createHarness(t);
 
+  assert.equal(harness.monitor.getStatus(), "inactive");
+
   await harness.monitor.start();
+
+  assert.equal(harness.monitor.getStatus(), "active");
+
   await harness.monitor.start();
 
   assert.equal(harness.watcherCreations, 1);
 
   await harness.monitor.stop();
+
+  assert.equal(harness.monitor.getStatus(), "inactive");
+
   await harness.monitor.stop();
 
   assert.equal(harness.watcher.closed, true);

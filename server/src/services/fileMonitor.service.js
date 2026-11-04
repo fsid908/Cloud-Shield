@@ -47,6 +47,7 @@ export const createFileMonitor = ({
 
   let watcher = null;
   let stopping = false;
+  let isRunning = false;
 
   const pendingChecks = new Map();
   const lastReportedState = new Map();
@@ -295,10 +296,12 @@ export const createFileMonitor = ({
     }
 
     logger.info("Cloud-Shield filesystem monitor is watching stored uploads.");
+    isRunning = true;
   };
 
   const stop = async () => {
     stopping = true;
+    isRunning = false;
 
     for (const timer of pendingChecks.values()) {
       clearTimeout(timer);
@@ -315,7 +318,11 @@ export const createFileMonitor = ({
     }
   };
 
-  return { start, stop };
+  return {
+    start,
+    stop,
+    getStatus: () => (isRunning ? "active" : "inactive"),
+  };
 };
 
 // Export the production monitor instance.
