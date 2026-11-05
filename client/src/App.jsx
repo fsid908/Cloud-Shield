@@ -226,6 +226,7 @@ function App() {
     setDashboardError("");
 
     const base = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
     try {
       const [
         activityResponse,
@@ -269,6 +270,7 @@ function App() {
       if (!eventsResponse.ok || !events.success) {
         throw new Error(events.message || "Failed to load security events.");
       }
+
       setMonitoringStatus(
         healthResponse.ok && health.success
           ? (health.data?.monitoring ?? "unavailable")
@@ -278,7 +280,7 @@ function App() {
       setDashboardData({
         activity: activity.data,
         detection: detection.data,
-        events: events.data.events,
+        events: events.data?.events ?? [],
       });
     } catch (error) {
       if (error.name !== "AbortError") {
@@ -529,6 +531,7 @@ function App() {
       trend: "neutral",
     },
   ];
+
   const events = (dashboardData?.events ?? []).map((event) => {
     const riskScore = Number(event.riskScore ?? 0);
 
