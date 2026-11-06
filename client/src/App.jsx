@@ -172,6 +172,7 @@ function App() {
   const [user, setUser] = useState(null);
 
   const [dashboardData, setDashboardData] = useState(null);
+  const [monitoringStatus, setMonitoringStatus] = useState("unavailable");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -225,27 +226,37 @@ function App() {
     setDashboardError("");
 
     const base = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-    try {
-      const [activityResponse, detectionResponse, eventsResponse] =
-        await Promise.all([
-          fetch(`${base}/security/activity`, {
-            credentials: "include",
-            signal,
-          }),
-          fetch(`${base}/security/detection`, {
-            credentials: "include",
-            signal,
-          }),
-          fetch(`${base}/security/events`, {
-            credentials: "include",
-            signal,
-          }),
-        ]);
 
-      const [activity, detection, events] = await Promise.all([
+    try {
+      const [
+        activityResponse,
+        detectionResponse,
+        eventsResponse,
+        healthResponse,
+      ] = await Promise.all([
+        fetch(`${base}/security/activity`, {
+          credentials: "include",
+          signal,
+        }),
+        fetch(`${base}/security/detection`, {
+          credentials: "include",
+          signal,
+        }),
+        fetch(`${base}/security/events`, {
+          credentials: "include",
+          signal,
+        }),
+        fetch(`${base}/health`, {
+          credentials: "include",
+          signal,
+        }),
+      ]);
+
+      const [activity, detection, events, health] = await Promise.all([
         activityResponse.json(),
         detectionResponse.json(),
         eventsResponse.json(),
+        healthResponse.json(),
       ]);
 
       if (!activityResponse.ok || !activity.success) {
@@ -259,6 +270,13 @@ function App() {
       if (!eventsResponse.ok || !events.success) {
         throw new Error(events.message || "Failed to load security events.");
       }
+
+      setMonitoringStatus(
+        healthResponse.ok && health.success
+          ? (health.data?.monitoring ?? "unavailable")
+          : "unavailable",
+      );
+
       setDashboardData({
         activity: activity.data,
         detection: detection.data,
@@ -273,7 +291,6 @@ function App() {
         setDashboardLoading(false);
       }
     }
-
   };
 
   useEffect(() => {
@@ -514,11 +531,11 @@ function App() {
       trend: "neutral",
     },
   ];
+
   const events = (dashboardData?.events ?? []).map((event) => {
     const riskScore = Number(event.riskScore ?? 0);
 
-    const color =
-      riskScore >= 70 ? "red" : riskScore >= 40 ? "amber" : "teal";
+    const color = riskScore >= 70 ? "red" : riskScore >= 40 ? "amber" : "teal";
 
     const severity =
       riskScore >= 70 ? "High" : riskScore >= 40 ? "Medium" : "Low";
@@ -526,16 +543,21 @@ function App() {
     const timestamp = event.createdAt ?? event.updatedAt;
 
     return {
-      title: event.reason || event.detectionType || event.eventType || "Security event",
+      title:
+        event.reason ||
+        event.detectionType ||
+        event.eventType ||
+        "Security event",
       asset:
         event.fileId?.originalName ||
         event.fileId?.storedName ||
         "Unknown file",
       time: timestamp ? new Date(timestamp).toLocaleString() : "—",
       severity,
-      status: event.eventType === "suspicious_activity"
-        ? "Threat detected"
-        : "Recorded",
+      status:
+        event.eventType === "suspicious_activity"
+          ? "Threat detected"
+          : "Recorded",
       color,
     };
   });
@@ -759,8 +781,9 @@ function App() {
             <button
               type="button"
               key={label}
-              className={`nav-item ${activePage === label ? "nav-item-active" : ""
-                }`}
+              className={`nav-item ${
+                activePage === label ? "nav-item-active" : ""
+              }`}
               onClick={() => selectPage(label)}
             >
               {createElement(Icon, { size: 18, strokeWidth: 1.8 })}
@@ -769,8 +792,9 @@ function App() {
 
               {count && (
                 <span
-                  className={`nav-count ${label === "Incidents" ? "nav-count-alert" : ""
-                    }`}
+                  className={`nav-count ${
+                    label === "Incidents" ? "nav-count-alert" : ""
+                  }`}
                 >
                   {count}
                 </span>
@@ -788,8 +812,9 @@ function App() {
             <button
               type="button"
               key={label}
-              className={`nav-item ${activePage === label ? "nav-item-active" : ""
-                }`}
+              className={`nav-item ${
+                activePage === label ? "nav-item-active" : ""
+              }`}
               onClick={() => selectPage(label)}
             >
               {createElement(Icon, { size: 18, strokeWidth: 1.8 })}
@@ -1168,8 +1193,9 @@ function App() {
                 {!selectedFile ? (
                   <label
                     htmlFor="cloud-shield-file-input"
-                    className={`upload-dropzone ${isDragging ? "upload-dropzone-active" : ""
-                      }`}
+                    className={`upload-dropzone ${
+                      isDragging ? "upload-dropzone-active" : ""
+                    }`}
                     onDragOver={(event) => {
                       event.preventDefault();
 
@@ -1289,10 +1315,11 @@ function App() {
 
                     {scanStatus === "completed" && scanResult && (
                       <div
-                        className={`scan-result-card ${scanResult.file?.status === "quarantined"
+                        className={`scan-result-card ${
+                          scanResult.file?.status === "quarantined"
                             ? "scan-result-infected"
                             : "scan-result-safe"
-                          }`}
+                        }`}
                         role="status"
                       >
                         <div className="scan-result-heading">
@@ -1331,21 +1358,22 @@ function App() {
                 )}
 
                 <div
-                  className={`upload-message ${uploadMessage.includes("Invalid") ||
-                      uploadMessage.includes("too large") ||
-                      uploadMessage.includes("Empty")
+                  className={`upload-message ${
+                    uploadMessage.includes("Invalid") ||
+                    uploadMessage.includes("too large") ||
+                    uploadMessage.includes("Empty")
                       ? "upload-message-error"
                       : uploadMessage.includes("successfully")
                         ? "upload-message-success"
                         : "upload-message-info"
-                    }`}
+                  }`}
                   role="status"
                   aria-live="polite"
                 >
                   <strong>
                     {uploadMessage.includes("Invalid") ||
-                      uploadMessage.includes("too large") ||
-                      uploadMessage.includes("Empty")
+                    uploadMessage.includes("too large") ||
+                    uploadMessage.includes("Empty")
                       ? "⚠ Validation Error"
                       : uploadMessage.includes("successfully")
                         ? "✓ File Validated"
@@ -1370,7 +1398,13 @@ function App() {
                   <div className="protection-title-row">
                     <h2>Protection overview</h2>
 
-                    <Badge tone="neutral">Monitoring status unavailable</Badge>
+                    <Badge
+                      tone={
+                        monitoringStatus === "active" ? "success" : "neutral"
+                      }
+                    >
+                      Monitoring {monitoringStatus}
+                    </Badge>
                   </div>
 
                   <p>
