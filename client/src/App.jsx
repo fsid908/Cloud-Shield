@@ -259,23 +259,6 @@ function App() {
       if (!eventsResponse.ok || !events.success) {
         throw new Error(events.message || "Failed to load security events.");
       }
-
-<<<<<<< Updated upstream
-  setDashboardData({
-    activity: activity.data,
-    detection: detection.data,
-    events: events.data.events,
-  });
-} catch (error) {
-  if (error.name !== "AbortError") {
-    setDashboardError(error.message);
-  }
-} finally {
-  if (!signal?.aborted) {
-    setDashboardLoading(false);
-  }
-}
-=======
       setDashboardData({
         activity: activity.data,
         detection: detection.data,
@@ -290,7 +273,6 @@ function App() {
         setDashboardLoading(false);
       }
     }
->>>>>>> Stashed changes
 
   };
 

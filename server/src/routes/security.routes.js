@@ -4,11 +4,6 @@ import detectionController from "../controllers/detection.controller.js";
 import securityEventController from "../controllers/securityEvent.controller.js";
 
 const router = Router();
-
-import { Router } from "express";
-import authenticate from "../middleware/auth.middleware.js";
-import detectionController from "../controllers/detection.controller.js";
-import securityEventController from "../controllers/securityEvent.controller.js";
 router.get("/activity", authenticate, detectionController.getRecentActivity);
 
 // Analyze recent file activity for suspicious signals.
