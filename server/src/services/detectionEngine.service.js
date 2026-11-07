@@ -5,28 +5,12 @@ import activityAnalysisService from "./activityAnalysis.service.js";
 import securityEventService from "./securityEvent.service.js";
 import riskScorer from "../utils/riskScorer.js";
 
-/**
- * Maps a signal severity to the numeric risk score.
- *
- * These scores are used for prioritization, not as proof that
- * a ransomware attack has occurred.
- */
-const SEVERITY_RISK_SCORES = Object.freeze({
-    low: 15,
-    medium: 45,
-    high: 65,
-    critical: 90,
-});
 
 /**
- * Generates a deterministic identifier for the exact evidence
- * that triggered a detection signal.
+ * Generates a deterministic ID for a detection episode.
  *
- * Repeated evaluation of the same evidence produces the same ID.
- *
- * Note:
- * Different activity windows may contain different activity IDs,
- * even when they belong to the same real-world incident.
+ * Identical signal types with identical triggering activities
+ * will produce the same episode ID.
  */
 const createEpisodeId = (signalType, activities) => {
     const activityIds = activities
@@ -44,6 +28,7 @@ const createEpisodeId = (signalType, activities) => {
         .digest("hex");
 };
 
+
 /**
  * Returns unique file IDs from the activities that triggered
  * a particular detection signal.
@@ -57,6 +42,7 @@ const getAffectedFileIds = (activities) => {
         ),
     ];
 };
+
 
 /**
  * Determines which activities are relevant to each detection rule.
@@ -75,7 +61,7 @@ const getTriggeringActivities = (signalType, activities) => {
                     Boolean(activity.previousExtension) &&
                     Boolean(activity.currentExtension) &&
                     activity.previousExtension !==
-                        activity.currentExtension
+                    activity.currentExtension
             );
 
         case "mass_file_rename":
@@ -88,6 +74,7 @@ const getTriggeringActivities = (signalType, activities) => {
     }
 };
 
+
 /**
  * Converts detection signals into persistent security events.
  *
@@ -95,7 +82,12 @@ const getTriggeringActivities = (signalType, activities) => {
  * detection episode. SecurityEvent's existing schema requires
  * a fileId for every event.
  */
-const persistDetectionSignals = async (userId, signals, activities) => {
+const persistDetectionSignals = async (
+    userId,
+    signals,
+    activities,
+    riskScore
+) => {
     const persistedEvents = [];
 
     for (const signal of signals) {
@@ -128,10 +120,6 @@ const persistDetectionSignals = async (userId, signals, activities) => {
         );
 
         const eventType = "suspicious_activity";
-
-        const riskScore =
-            SEVERITY_RISK_SCORES[signal.severity] ?? 0;
-
         const reason = signal.description;
 
         const metadata = {
@@ -161,14 +149,20 @@ const persistDetectionSignals = async (userId, signals, activities) => {
     return persistedEvents;
 };
 
+
+/**
+ * Detects suspicious file activity and calculates its risk score.
+ */
 const detectSuspiciousActivity = async (
     userId,
     windowSeconds = 30
 ) => {
+    // Validate user ID.
     if (!userId) {
         throw new AppError("User id is required.", 400);
     }
 
+    // Validate analysis window.
     if (
         !Number.isInteger(windowSeconds) ||
         windowSeconds <= 0 ||
@@ -180,6 +174,7 @@ const detectSuspiciousActivity = async (
         );
     }
 
+    // Step 1: Analyze recent file activity.
     const analysis =
         await activityAnalysisService.analyzeRecentActivity(
             userId,
@@ -189,7 +184,8 @@ const detectSuspiciousActivity = async (
     const activities = analysis.activities;
     const signals = [];
 
-    // Rule 1: at least three distinct modified files.
+
+    // Rule 1: At least three distinct modified files.
     const modifiedActivities = activities.filter(
         (activity) => activity.activityType === "modified"
     );
@@ -213,7 +209,8 @@ const detectSuspiciousActivity = async (
         });
     }
 
-    // Rule 2: more than three modifications in a window
+
+    // Rule 2: More than three modifications in a window
     // no longer than 30 seconds.
     if (
         analysis.modifications > 3 &&
@@ -231,7 +228,8 @@ const detectSuspiciousActivity = async (
         });
     }
 
-    // Rule 3: multiple file extension changes.
+
+    // Rule 3: Multiple file extension changes.
     if (
         analysis.extensionChanges >= 2 &&
         analysis.windowSeconds <= 30
@@ -248,7 +246,8 @@ const detectSuspiciousActivity = async (
         });
     }
 
-    // Rule 4: mass file renaming.
+
+    // Rule 4: Mass file renaming.
     if (
         analysis.renames >= 3 &&
         analysis.windowSeconds <= 30
@@ -265,24 +264,48 @@ const detectSuspiciousActivity = async (
         });
     }
 
-    // Persist before returning a successful analysis response.
-    // Persistence failures are propagated to the controller.
+
+    // Step 2: Calculate overall activity risk score.
+    const riskAssessment = riskScorer.calculateRiskScore({
+        uniqueFilesModified: modifiedFileIds.size,
+        totalEvents: analysis.modifications,
+        windowSeconds: analysis.windowSeconds,
+    });
+
+    const riskLevel = riskScorer.getRiskLevel(
+        riskAssessment.score
+    );
+
+
+    // Step 3: Persist detection signals as security events.
+    // Risk score is passed explicitly to avoid scope-related errors.
     const events = await persistDetectionSignals(
         userId,
         signals,
-        activities
+        activities,
+        riskAssessment.score
     );
 
-    // Preserve the existing response fields for API compatibility.
+
+    // Step 4: Return detection and risk assessment results.
+    // Existing response fields are preserved for API compatibility.
     return {
         windowSeconds: analysis.windowSeconds,
+
         signals,
         signalCount: signals.length,
+
         activity: analysis,
+
         events,
         persistedEventCount: events.length,
+
+        riskScore: riskAssessment.score,
+        riskLevel,
+        riskReasons: riskAssessment.reasons,
     };
 };
+
 
 export default {
     detectSuspiciousActivity,
