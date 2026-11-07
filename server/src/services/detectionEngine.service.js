@@ -4,14 +4,12 @@ import AppError from "../utils/AppError.js";
 import activityAnalysisService from "./activityAnalysis.service.js";
 import securityEventService from "./securityEvent.service.js";
 import riskScorer from "../utils/riskScorer.js";
+import responseEngine from "./responseEngine.service.js";
 
 
-/**
- * Generates a deterministic ID for a detection episode.
- *
- * Identical signal types with identical triggering activities
- * will produce the same episode ID.
- */
+
+//  Generates a deterministic ID for a detection episode.
+
 const createEpisodeId = (signalType, activities) => {
     const activityIds = activities
         .map((activity) => String(activity._id))
@@ -86,7 +84,8 @@ const persistDetectionSignals = async (
     userId,
     signals,
     activities,
-    riskScore
+    riskScore,
+    responseDecision
 ) => {
     const persistedEvents = [];
 
@@ -125,9 +124,19 @@ const persistDetectionSignals = async (
         const metadata = {
             severity: signal.severity,
             evidence: signal.evidence,
+
             triggeringActivityIds: triggeringActivities.map(
                 (activity) => String(activity._id)
             ),
+
+            response: {
+                action: responseDecision.action,
+                priority: responseDecision.priority,
+                riskLevel: responseDecision.riskLevel,
+                requiresContainment: responseDecision.requiresContainment,
+                description: responseDecision.description,
+                evaluatedAt: responseDecision.evaluatedAt,
+            },
         };
 
         for (const fileId of affectedFileIds) {
@@ -276,19 +285,25 @@ const detectSuspiciousActivity = async (
         riskAssessment.score
     );
 
+    // Step 3: Determine the appropriate security response.
+    const responseDecision = responseEngine.determineResponse({
+        riskScore: riskAssessment.score,
+    });
 
-    // Step 3: Persist detection signals as security events.
+
+    // Step 4: Persist detection signals as security events.
     // Risk score is passed explicitly to avoid scope-related errors.
     const events = await persistDetectionSignals(
         userId,
         signals,
         activities,
-        riskAssessment.score
+        riskAssessment.score,
+        responseDecision
     );
 
 
-    // Step 4: Return detection and risk assessment results.
-    // Existing response fields are preserved for API compatibility.
+    // Step 5: Return detection and risk assessment results.
+    
     return {
         windowSeconds: analysis.windowSeconds,
 
@@ -303,6 +318,8 @@ const detectSuspiciousActivity = async (
         riskScore: riskAssessment.score,
         riskLevel,
         riskReasons: riskAssessment.reasons,
+
+        responseDecision,
     };
 };
 

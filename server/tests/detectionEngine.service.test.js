@@ -144,6 +144,34 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
                 (event) => event.eventType === "suspicious_activity"
             )
         );
+
+        // Verify overall risk assessment.
+        assert.equal(result.riskScore, 30);
+        assert.equal(result.riskLevel, "medium");
+
+        // Verify response engine integration.
+        assert.equal(
+            result.responseDecision.action,
+            "generate_alert"
+        );
+
+        assert.equal(
+            result.responseDecision.priority,
+            "medium"
+        );
+
+        assert.equal(
+            result.responseDecision.requiresContainment,
+            false
+        );
+
+        // Verify response metadata is persisted.
+        assert.ok(
+            massModificationEvents.every(
+                (event) =>
+                    event.metadata.response.action === "generate_alert"
+            )
+        );
     });
 
     it("should not flag file creation as mass file modification", async () => {
@@ -307,4 +335,56 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
             "mass_file_modification"
         );
     });
+
+    it("should recommend containment for high-risk activity", async () => {
+        analysisMock.mock.mockImplementation(async () =>
+            createAnalysis({
+                modifications: 4,
+                activities: [
+                    {
+                        _id: "activity-1",
+                        fileId: "file-1",
+                        activityType: "modified",
+                    },
+                    {
+                        _id: "activity-2",
+                        fileId: "file-2",
+                        activityType: "modified",
+                    },
+                    {
+                        _id: "activity-3",
+                        fileId: "file-3",
+                        activityType: "modified",
+                    },
+                    {
+                        _id: "activity-4",
+                        fileId: "file-4",
+                        activityType: "modified",
+                    },
+                    {
+                        _id: "activity-5",
+                        fileId: "file-5",
+                        activityType: "modified",
+                    },
+                    {
+                        _id: "activity-6",
+                        fileId: "file-6",
+                        activityType: "modified",
+                    },
+                ],
+            })
+        );
+
+        const result =
+            await detectionEngine.detectSuspiciousActivity("user-1");
+
+        assert.equal(result.riskScore, 45);
+        assert.equal(result.riskLevel, "medium");
+
+        assert.equal(
+            result.responseDecision.action,
+            "generate_alert"
+        );
+    });
+
 });
