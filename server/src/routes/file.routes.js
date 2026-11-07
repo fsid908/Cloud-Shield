@@ -10,7 +10,7 @@ const router = Router();
 // create/ upload file metadata for authenticated user 
 router.post("/", authenticate, upload.single("file"),
 fileController.createFile);
-
+router.get("/", authenticate, fileController.getUserFiles);
 // get file owned by authenticated user 
 router.get("/:fileId", authenticate,fileController.getFile);
 

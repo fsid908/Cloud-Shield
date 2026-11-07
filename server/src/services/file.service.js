@@ -326,7 +326,16 @@ const getUserFile = async (fileId, userId) => {
     return file;
 };
 
+const getUserFiles = async (userId) => {
+  return File.find({ userId })
+    .select(
+      "_id originalName size status integrityStatus backupStoredName createdAt"
+    )
+    .sort({ createdAt: -1 });
+};
+
 export default {
-    createFile,
-    getUserFile,
+  createFile,
+  getUserFile,
+  getUserFiles,
 };
