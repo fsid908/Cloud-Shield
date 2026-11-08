@@ -147,20 +147,18 @@ export const createFileMonitor = ({
     }
 
     try {
-      if (!missing) {
-        try {
-          await recordFileActivity({
-            userId: file.userId,
-            fileId: file._id,
-            activityType: "modified",
-            currentName: file.originalName,
-          });
-        } catch (error) {
-          logger.error("File monitor could not record file activity.", {
-            fileId: fileKey,
-            message: error.message,
-          });
-        }
+      try {
+        await recordFileActivity({
+          userId: file.userId,
+          fileId: file._id,
+          activityType: missing ? "deleted" : "modified",
+          currentName: file.originalName,
+        });
+      } catch (error) {
+        logger.error("File monitor could not record file activity.", {
+          fileId: fileKey,
+          message: error.message,
+        });
       }
 
       await createIntegrityEvent({

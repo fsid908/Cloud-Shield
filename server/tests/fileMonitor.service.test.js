@@ -83,9 +83,9 @@ const createHarness = async (t, { contents = "trusted content" } = {}) => {
       return activity;
     },
     logger: {
-      info() {},
-      warn() {},
-      error() {},
+      info() { },
+      warn() { },
+      error() { },
     },
   });
 
@@ -194,7 +194,9 @@ test("reports a tracked file that remains missing after the grace period", async
   assert.equal(harness.events.length, 1);
   assert.equal(harness.events[0].currentHash, "missing");
   assert.equal(harness.trackedFile.integrityStatus, "unavailable");
-
+  assert.equal(harness.activities.length, 1);
+  assert.equal(harness.activities[0].activityType, "deleted");
+  assert.equal(harness.activities[0].fileId, harness.trackedFile._id);
   await harness.monitor.stop();
 });
 
