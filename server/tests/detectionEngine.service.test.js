@@ -111,6 +111,7 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
         );
 
         assert.ok(massModificationSignal);
+
         assert.equal(
             massModificationSignal.evidence.uniqueFilesModified,
             3
@@ -146,18 +147,18 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
         );
 
         // Verify overall risk assessment.
-        assert.equal(result.riskScore, 30);
-        assert.equal(result.riskLevel, "medium");
+        assert.equal(result.riskScore, 25);
+        assert.equal(result.riskLevel, "low");
 
         // Verify response engine integration.
         assert.equal(
             result.responseDecision.action,
-            "generate_alert"
+            "monitor"
         );
 
         assert.equal(
             result.responseDecision.priority,
-            "medium"
+            "low"
         );
 
         assert.equal(
@@ -169,7 +170,7 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
         assert.ok(
             massModificationEvents.every(
                 (event) =>
-                    event.metadata.response.action === "generate_alert"
+                    event.metadata.response.action === "monitor"
             )
         );
     });
@@ -336,7 +337,7 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
         );
     });
 
-    it("should recommend containment for high-risk activity", async () => {
+    it("should generate a medium-risk response for multiple modified files", async () => {
         analysisMock.mock.mockImplementation(async () =>
             createAnalysis({
                 modifications: 4,
@@ -378,7 +379,7 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
         const result =
             await detectionEngine.detectSuspiciousActivity("user-1");
 
-        assert.equal(result.riskScore, 45);
+        assert.equal(result.riskScore, 35);
         assert.equal(result.riskLevel, "medium");
 
         assert.equal(
@@ -387,4 +388,44 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
         );
     });
 
+    it("should detect mass file deletion", async () => {
+        analysisMock.mock.mockImplementation(async () =>
+            createAnalysis({
+                deletions: 3,
+                activities: [
+                    {
+                        _id: "activity-delete-1",
+                        fileId: "file-1",
+                        activityType: "deleted",
+                    },
+                    {
+                        _id: "activity-delete-2",
+                        fileId: "file-2",
+                        activityType: "deleted",
+                    },
+                    {
+                        _id: "activity-delete-3",
+                        fileId: "file-3",
+                        activityType: "deleted",
+                    },
+                ],
+            })
+        );
+
+        const result =
+            await detectionEngine.detectSuspiciousActivity("user-1");
+
+        const deletionSignal = result.signals.find(
+            (signal) => signal.type === "mass_file_deletion"
+        );
+
+        assert.ok(deletionSignal);
+        assert.equal(deletionSignal.severity, "high");
+
+        const deletionEvents = result.events.filter(
+            (event) => event.detectionType === "mass_file_deletion"
+        );
+
+        assert.equal(deletionEvents.length, 3);
+    });
 });

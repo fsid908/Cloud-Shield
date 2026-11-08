@@ -27,10 +27,8 @@ const createEpisodeId = (signalType, activities) => {
 };
 
 
-/**
- * Returns unique file IDs from the activities that triggered
- * a particular detection signal.
- */
+// Returns unique file IDs from the activities that triggered particular detection signal.
+
 const getAffectedFileIds = (activities) => {
     return [
         ...new Set(
@@ -61,10 +59,14 @@ const getTriggeringActivities = (signalType, activities) => {
                     activity.previousExtension !==
                     activity.currentExtension
             );
-
         case "mass_file_rename":
             return activities.filter(
                 (activity) => activity.activityType === "renamed"
+            );
+
+        case "mass_file_deletion":
+            return activities.filter(
+                (activity) => activity.activityType === "deleted"
             );
 
         default:
@@ -73,13 +75,9 @@ const getTriggeringActivities = (signalType, activities) => {
 };
 
 
-/**
- * Converts detection signals into persistent security events.
- *
- * Each affected file receives an event associated with the same
- * detection episode. SecurityEvent's existing schema requires
- * a fileId for every event.
- */
+
+//   Converts detection signals into persistent security events.
+
 const persistDetectionSignals = async (
     userId,
     signals,
@@ -273,14 +271,53 @@ const detectSuspiciousActivity = async (
         });
     }
 
+    // Rule 5: Mass file deletion.
+    if (
+        analysis.deletions >= 3 &&
+        analysis.windowSeconds <= 30
+    ) {
+        signals.push({
+            type: "mass_file_deletion",
+            severity: "high",
+            description:
+                "Multiple files were deleted within a short period.",
+            evidence: {
+                deletions: analysis.deletions,
+                windowSeconds: analysis.windowSeconds,
+            },
+        });
+    }
 
     // Step 2: Calculate overall activity risk score.
+
+    // Collect unique deleted files.
+    const deletedActivities = activities.filter(
+        (activity) => activity.activityType === "deleted"
+    );
+
+    const deletedFileIds = new Set(
+        deletedActivities
+            .filter((activity) => activity.fileId)
+            .map((activity) => String(activity.fileId))
+    );
+
+    // Count suspicious activity events.
+    const suspiciousEventCount =
+        analysis.modifications +
+        analysis.deletions +
+        analysis.renames;
+
+    // Calculate the combined risk score.
     const riskAssessment = riskScorer.calculateRiskScore({
         uniqueFilesModified: modifiedFileIds.size,
-        totalEvents: analysis.modifications,
+        uniqueFilesDeleted: deletedFileIds.size,
+        totalEvents: suspiciousEventCount,
         windowSeconds: analysis.windowSeconds,
+        extensionChanges: analysis.extensionChanges,
+        renames: analysis.renames,
     });
 
+    
     const riskLevel = riskScorer.getRiskLevel(
         riskAssessment.score
     );
@@ -303,7 +340,7 @@ const detectSuspiciousActivity = async (
 
 
     // Step 5: Return detection and risk assessment results.
-    
+
     return {
         windowSeconds: analysis.windowSeconds,
 
