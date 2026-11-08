@@ -1176,9 +1176,11 @@ function App() {
 
                     <button
                       type="button"
+                      className="refresh-button"
                       onClick={fetchRecoveryFiles}
                       disabled={recoveryLoading}
                     >
+                      <RefreshCw size={15} />
                       {recoveryLoading ? "Refreshing..." : "Refresh"}
                     </button>
                   </div>
@@ -1229,6 +1231,7 @@ function App() {
 
                         <button
                           type="button"
+                          className="recovery-action-button"
                           disabled={
                             !file.backupStoredName ||
                             file.status !== "safe" ||
@@ -1293,7 +1296,7 @@ function App() {
                 <div className="heading-actions">
                   <button
                     type="button"
-                    className="button button-secondary"
+                    className="refresh-button"
                     onClick={() => fetchDashboardData()}
                     disabled={dashboardLoading}
                   >
@@ -1303,7 +1306,7 @@ function App() {
 
                   <button
                     type="button"
-                    className="button button-primary"
+                    className="refresh-button"
                     onClick={() => selectPage("Recovery center")}
                   >
                     <RefreshCw size={15} />
