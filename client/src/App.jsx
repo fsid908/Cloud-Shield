@@ -175,11 +175,18 @@ function App() {
   const [monitoringStatus, setMonitoringStatus] = useState("unavailable");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState("");
+  const [recoveryFiles, setRecoveryFiles] = useState([]);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveringFileId, setRecoveringFileId] = useState(null);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [recoveryError, setRecoveryError] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editFullName, setEditFullName] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
+  const [recoverySearch, setRecoverySearch] = useState("");
+  const [recoveryFilter, setRecoveryFilter] = useState("all");
 
   useEffect(() => {
     let isMounted = true;
@@ -290,6 +297,76 @@ function App() {
       if (!signal?.aborted) {
         setDashboardLoading(false);
       }
+    }
+  };
+
+  const fetchRecoveryFiles = async () => {
+    setRecoveryLoading(true);
+    setRecoveryError("");
+
+    const base = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+    try {
+      const response = await fetch(`${base}/files`, {
+        credentials: "include",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Failed to load files.");
+      }
+
+      setRecoveryFiles(Array.isArray(result.data) ? result.data : []);
+    } catch (error) {
+      setRecoveryError(error.message);
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleFileRecovery = async (fileId) => {
+    if (!fileId || recoveringFileId) return;
+
+    const file = recoveryFiles.find((item) => item._id === fileId);
+
+    if (!file) return;
+
+    if (
+      !window.confirm(
+        `Are you sure you want to restore "${file.originalName}" from its trusted backup?`,
+      )
+    ) {
+      return;
+    }
+
+    setRecoveringFileId(fileId);
+    setRecoveryMessage("");
+    setRecoveryError("");
+
+    const base = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+    try {
+      const response = await fetch(`${base}/files/${fileId}/recover`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "File recovery failed.");
+      }
+
+      setRecoveryMessage(
+        `${result.data.originalName} recovered successfully. Integrity: ${result.data.integrityStatus}.`,
+      );
+
+      await fetchRecoveryFiles();
+    } catch (error) {
+      setRecoveryError(error.message);
+    } finally {
+      setRecoveringFileId(null);
     }
   };
 
@@ -576,14 +653,34 @@ function App() {
     );
   }, [search, events]);
 
+  const filteredRecoveryFiles = useMemo(() => {
+    const query = recoverySearch.trim().toLowerCase();
+
+    return recoveryFiles.filter((file) => {
+      const matchesSearch = file.originalName?.toLowerCase().includes(query);
+
+      const hasBackup = Boolean(file.backupStoredName);
+
+      const matchesFilter =
+        recoveryFilter === "all" ||
+        (recoveryFilter === "protected" && hasBackup) ||
+        (recoveryFilter === "unprotected" && !hasBackup);
+
+      return matchesSearch && matchesFilter;
+    });
+  }, [recoveryFiles, recoverySearch, recoveryFilter]);
+
   const selectPage = (label) => {
     setActivePage(label);
 
     setSidebarOpen(false);
 
     setShowNotifications(false);
-  };
 
+    if (label === "Recovery center") {
+      fetchRecoveryFiles();
+    }
+  };
   const notify = (message) => {
     setToast(message);
 
@@ -1073,7 +1170,80 @@ function App() {
               )}
 
               {currentPage === "Recovery center" && (
-                <p>Recovery actions are not connected to the backend yet.</p>
+                <div className="recovery-content">
+                  <div className="recovery-header">
+                    <h3>Protected files</h3>
+
+                    <button
+                      type="button"
+                      onClick={fetchRecoveryFiles}
+                      disabled={recoveryLoading}
+                    >
+                      {recoveryLoading ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+
+                  <div className="recovery-controls">
+                    <input
+                      type="search"
+                      placeholder="Search files..."
+                      value={recoverySearch}
+                      onChange={(e) => setRecoverySearch(e.target.value)}
+                    />
+
+                    <select
+                      value={recoveryFilter}
+                      onChange={(e) => setRecoveryFilter(e.target.value)}
+                    >
+                      <option value="all">All files</option>
+                      <option value="protected">Protected</option>
+                      <option value="unprotected">No backup</option>
+                    </select>
+                  </div>
+
+                  {recoveryMessage && <p role="status">{recoveryMessage}</p>}
+
+                  {recoveryError && <p role="alert">{recoveryError}</p>}
+
+                  {recoveryLoading ? (
+                    <p>Loading protected files...</p>
+                  ) : recoveryFiles.length === 0 ? (
+                    <p>No uploaded files found.</p>
+                  ) : filteredRecoveryFiles.length === 0 ? (
+                    <p>No matching files found.</p>
+                  ) : (
+                    filteredRecoveryFiles.map((file) => (
+                      <div className="selected-file" key={file._id}>
+                        <File size={20} />
+
+                        <div>
+                          <strong>{file.originalName}</strong>
+
+                          <span>
+                            {file.integrityStatus} ·{" "}
+                            {file.backupStoredName
+                              ? "Backup available"
+                              : "No backup"}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={
+                            !file.backupStoredName ||
+                            file.status !== "safe" ||
+                            recoveringFileId !== null
+                          }
+                          onClick={() => handleFileRecovery(file._id)}
+                        >
+                          {recoveringFileId === file._id
+                            ? "Recovering..."
+                            : "Recover"}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               )}
 
               {currentPage === "Analytics & reports" && (
@@ -1099,7 +1269,7 @@ function App() {
 
               <button
                 type="button"
-                className="button button-secondary"
+                className="button button-secondary recovery-back-button"
                 onClick={() => selectPage("Overview")}
               >
                 <ArrowRight size={15} />

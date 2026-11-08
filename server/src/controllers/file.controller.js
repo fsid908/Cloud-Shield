@@ -46,7 +46,19 @@ const getFile = async (req, res, next) => {
   }
 };
 
+const getUserFiles = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const files = await fileService.getUserFiles(userId);
+
+    return sendSuccess(res, 200, "Files retrieved successfully.", files);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export default {
   createFile,
   getFile,
+  getUserFiles,
 };
