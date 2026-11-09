@@ -51,6 +51,7 @@ export const createFileMonitor = ({
 
   const pendingChecks = new Map();
   const lastReportedState = new Map();
+  const verificationQueues = new Map();
 
   // Accept only files directly inside uploads, excluding backups.
   const getStoredName = (filePath) => {
@@ -64,7 +65,7 @@ export const createFileMonitor = ({
   };
 
   // Compare stored content with the trusted SHA-256 hash.
-  const verifyTrackedFile = async (filePath, reportMissing) => {
+  const verifyTrackedFileOnce = async (filePath, reportMissing) => {
     const storedName = getStoredName(filePath);
 
     if (!storedName || stopping) {
@@ -193,6 +194,32 @@ export const createFileMonitor = ({
       });
     }
   };
+
+
+const verifyTrackedFile = async (filePath, reportMissing) => {
+  const storedName = getStoredName(filePath);
+
+  if (!storedName || stopping) {
+    return;
+  }
+
+  const previousCheck =
+    verificationQueues.get(storedName) ?? Promise.resolve();
+
+  const currentCheck = previousCheck
+    .catch(() => {})
+    .then(() => verifyTrackedFileOnce(filePath, reportMissing));
+
+  verificationQueues.set(storedName, currentCheck);
+
+  try {
+    await currentCheck;
+  } finally {
+    if (verificationQueues.get(storedName) === currentCheck) {
+      verificationQueues.delete(storedName);
+    }
+  }
+};
 
   // Debounce noisy filesystem notifications for the same file.
   const scheduleCheck = (filePath, delayMs, reportMissing = false) => {

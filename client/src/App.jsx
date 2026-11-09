@@ -158,23 +158,29 @@ function App() {
   const [user, setUser] = useState(null);
 
   const [dashboardData, setDashboardData] = useState(null);
+const navigation = [
+  { label: "Overview", icon: LayoutDashboard },
+  {
+    label: "Threat detection",
+    icon: ShieldAlert,
+    count: String(dashboardData?.eventsTotal ?? 0),
+  },
+  {
+    label: "Incidents",
+    icon: Siren,
+    count: String(
+      new Set(
+        (dashboardData?.events ?? [])
+          .map((event) => event.episodeId)
+          .filter(Boolean)
+      ).size
+    ),
+  },
+  { label: "Protected files", icon: Files },
+  { label: "Backup management", icon: Database },
+  { label: "Recovery center", icon: RefreshCw },
+];
 
-  const navigation = [
-    { label: "Overview", icon: LayoutDashboard },
-    {
-      label: "Threat detection",
-      icon: ShieldAlert,
-      count: String(dashboardData?.events?.length ?? 0),
-    },
-    {
-      label: "Incidents",
-      icon: Siren,
-      count: String(dashboardData?.events?.length ?? 0),
-    },
-    { label: "Protected files", icon: Files },
-    { label: "Backup management", icon: Database },
-    { label: "Recovery center", icon: RefreshCw },
-  ];
 
   const [monitoringStatus, setMonitoringStatus] = useState("unavailable");
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -287,14 +293,14 @@ function App() {
           ? (health.data?.monitoring ?? "unavailable")
           : "unavailable",
       );
-
       console.log("Detection API Data:", detection.data);
+setDashboardData({
+  activity: activity.data,
+  detection: detection.data,
+  events: events.data?.events ?? [],
+  eventsTotal: events.data?.pagination?.total ?? 0,
+});
 
-      setDashboardData({
-        activity: activity.data,
-        detection: detection.data,
-        events: events.data?.events ?? [],
-      });
     } catch (error) {
       if (error.name !== "AbortError") {
         setDashboardError(error.message);
@@ -580,16 +586,16 @@ function App() {
   const dashboardMetrics = [
     {
       label: "Recent activity",
-      value: dashboardData?.activity?.totalEvents ?? "—",
-      change: `${dashboardData?.activity?.riskLevel ?? "—"} risk`,
+      value: dashboardData?.detection?.activity?.totalActivities ?? "—",
+      change: `${dashboardData?.detection?.riskLevel ?? "—"} risk`,
       note: `Last ${dashboardData?.activity?.windowSeconds ?? 30} seconds`,
       icon: Activity,
       color: "blue",
       trend: "neutral",
     },
     {
-      label: "Files modified",
-      value: dashboardData?.activity?.uniqueFilesModified ?? "—",
+      label: "Files involved",
+      value: dashboardData?.detection?.activity?.uniqueFiles ?? "—",
       change: "Recent activity",
       note: "Unique files modified",
       icon: Files,
@@ -607,7 +613,7 @@ function App() {
     },
     {
       label: "Persisted events",
-      value: dashboardData?.events?.length ?? "—",
+      value: dashboardData?.eventsTotal ?? "—",
       change: "Recorded events",
       note: "Saved security events",
       icon: AlertTriangle,
@@ -615,37 +621,46 @@ function App() {
       trend: "neutral",
     },
   ];
+const events = (dashboardData?.events ?? []).map((event) => {
+  const riskScore = Number(event.riskScore ?? 0);
 
-  const events = (dashboardData?.events ?? []).map((event) => {
-    const riskScore = Number(event.riskScore ?? 0);
+  const color =
+    riskScore >= 80 ? "red" :
+    riskScore >= 60 ? "orange" :
+    riskScore >= 30 ? "amber" :
+    "teal";
 
-    const color = riskScore >= 70 ? "red" : riskScore >= 40 ? "amber" : "teal";
+  const severity =
+    riskScore >= 80 ? "Critical" :
+    riskScore >= 60 ? "High" :
+    riskScore >= 30 ? "Medium" :
+    "Low";
 
-    const severity =
-      riskScore >= 70 ? "High" : riskScore >= 40 ? "Medium" : "Low";
+  const timestamp = event.createdAt ?? event.updatedAt;
 
-    const timestamp = event.createdAt ?? event.updatedAt;
+  return {
+  id: event._id,
+  episodeId: event.episodeId,
+  riskScore,
+    title:
+      event.reason ||
+      event.detectionType ||
+      event.eventType ||
+      "Security event",
+    asset:
+      event.fileId?.originalName ||
+      event.fileId?.storedName ||
+      "Unknown file",
+    time: timestamp ? new Date(timestamp).toLocaleString() : "—",
+    severity,
+    status:
+      event.eventType === "suspicious_activity"
+        ? "Threat detected"
+        : "Recorded",
+    color,
+  };
+});
 
-    return {
-      riskScore,
-      title:
-        event.reason ||
-        event.detectionType ||
-        event.eventType ||
-        "Security event",
-      asset:
-        event.fileId?.originalName ||
-        event.fileId?.storedName ||
-        "Unknown file",
-      time: timestamp ? new Date(timestamp).toLocaleString() : "—",
-      severity,
-      status:
-        event.eventType === "suspicious_activity"
-          ? "Threat detected"
-          : "Recorded",
-      color,
-    };
-  });
 
   const threatSummary = {
     high: events.filter((event) => event.severity === "High").length,
@@ -1880,8 +1895,17 @@ function App() {
                       <h2>Live security activity</h2>
                       <p>Recent activity snapshot</p>
                     </div>
-                    <Badge tone="success">
-                      {dashboardData?.activity?.riskLevel ?? "Unavailable"}
+                    <Badge
+                      tone={
+                        dashboardData?.detection?.riskLevel === "critical" ||
+                        dashboardData?.detection?.riskLevel === "high"
+                          ? "danger"
+                          : dashboardData?.detection?.riskLevel === "medium"
+                            ? "warning"
+                            : "success"
+                      }
+                    >
+                      {dashboardData?.detection?.riskLevel ?? "Unavailable"}
                     </Badge>
                   </div>
 
@@ -1912,7 +1936,7 @@ function App() {
                       },
                       {
                         label: "Risk score",
-                        value: dashboardData?.activity?.riskScore,
+                        value: dashboardData?.detection?.riskScore,
                       },
                     ].map((item) => (
                       <div key={item.label}>
