@@ -46,20 +46,6 @@ import {
 
 import "./App.css";
 
-const navigation = [
-  { label: "Overview", icon: LayoutDashboard },
-
-  { label: "Threat detection", icon: ShieldAlert, count: "07" },
-
-  { label: "Incidents", icon: Siren, count: "02" },
-
-  { label: "Protected files", icon: Files },
-
-  { label: "Backup management", icon: Database },
-
-  { label: "Recovery center", icon: RefreshCw },
-];
-
 const secondaryNavigation = [
   { label: "Analytics & reports", icon: Activity },
 
@@ -172,6 +158,24 @@ function App() {
   const [user, setUser] = useState(null);
 
   const [dashboardData, setDashboardData] = useState(null);
+
+  const navigation = [
+    { label: "Overview", icon: LayoutDashboard },
+    {
+      label: "Threat detection",
+      icon: ShieldAlert,
+      count: String(dashboardData?.events?.length ?? 0),
+    },
+    {
+      label: "Incidents",
+      icon: Siren,
+      count: String(dashboardData?.events?.length ?? 0),
+    },
+    { label: "Protected files", icon: Files },
+    { label: "Backup management", icon: Database },
+    { label: "Recovery center", icon: RefreshCw },
+  ];
+
   const [monitoringStatus, setMonitoringStatus] = useState("unavailable");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState("");
@@ -284,6 +288,8 @@ function App() {
           : "unavailable",
       );
 
+      console.log("Detection API Data:", detection.data);
+
       setDashboardData({
         activity: activity.data,
         detection: detection.data,
@@ -317,6 +323,7 @@ function App() {
         throw new Error(result.message || "Failed to load files.");
       }
 
+      console.log("Protected Files API Data:", result.data);
       setRecoveryFiles(Array.isArray(result.data) ? result.data : []);
     } catch (error) {
       setRecoveryError(error.message);
@@ -620,6 +627,7 @@ function App() {
     const timestamp = event.createdAt ?? event.updatedAt;
 
     return {
+      riskScore,
       title:
         event.reason ||
         event.detectionType ||
@@ -639,6 +647,11 @@ function App() {
     };
   });
 
+  const threatSummary = {
+    high: events.filter((event) => event.severity === "High").length,
+    medium: events.filter((event) => event.severity === "Medium").length,
+    low: events.filter((event) => event.severity === "Low").length,
+  };
   const filteredEvents = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -677,7 +690,7 @@ function App() {
 
     setShowNotifications(false);
 
-    if (label === "Recovery center") {
+    if (label === "Recovery center" || label === "Protected files") {
       fetchRecoveryFiles();
     }
   };
@@ -1114,47 +1127,281 @@ function App() {
               </div>
 
               {currentPage === "Threat detection" && (
-                <div>
-                  <h3>Detected threats</h3>
+                <div className="incidents-content">
+                  <div className="incidents-heading">
+                    <div>
+                      <h3>Threat Detection</h3>
+                      <p>
+                        Monitor suspicious activity detected by the security
+                        system.
+                      </p>
+                    </div>
+                  </div>
 
-                  {events
+                  <div className="threat-summary">
+                    <article className="threat-stat">
+                      <span>Detection signals</span>
+                      <strong>
+                        {dashboardData?.detection?.signalCount ?? 0}
+                      </strong>
+                      <small>
+                        Last {dashboardData?.detection?.windowSeconds ?? 30}{" "}
+                        seconds
+                      </small>
+                    </article>
 
-                    .filter(
-                      (event) =>
-                        event.color === "red" || event.color === "amber",
-                    )
+                    <article className="threat-stat">
+                      <span>High severity</span>
+                      <strong>{threatSummary.high}</strong>
+                    </article>
 
-                    .map((event) => (
-                      <div key={event.title} className="selected-file">
-                        <ShieldAlert size={20} />
+                    <article className="threat-stat">
+                      <span>Medium severity</span>
+                      <strong>{threatSummary.medium}</strong>
+                    </article>
 
-                        <div>
-                          <strong>{event.title}</strong>
+                    <article className="threat-stat">
+                      <span>Low severity</span>
+                      <strong>{threatSummary.low}</strong>
+                    </article>
+                  </div>
 
-                          <span>
-                            {event.severity} · {event.status} · {event.time}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                  <h3 className="threat-list-heading">Security Events</h3>
+
+                  {events.length > 0 ? (
+                    <div className="incident-list">
+                      {events.map((event, index) => (
+                        <article
+                          className="incident-card"
+                          key={`${event.title}-${event.time}-${index}`}
+                        >
+                          <div
+                            className={`incident-icon incident-icon-${event.color}`}
+                          >
+                            <ShieldAlert size={20} />
+                          </div>
+
+                          <div className="incident-details">
+                            <strong>{event.title}</strong>
+                            <p>File: {event.asset}</p>
+
+                            <div className="incident-meta">
+                              <span
+                                className={`incident-severity ${event.severity.toLowerCase()}`}
+                              >
+                                {event.severity} severity
+                              </span>
+                              <span className="incident-status">
+                                {event.status}
+                              </span>
+                            </div>
+
+                            <p>{event.time}</p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="incidents-empty">
+                      <ShieldCheck size={28} />
+                      <strong>No security events found</strong>
+                      <p>No events have been returned by the server.</p>
+                    </div>
+                  )}
                 </div>
               )}
 
               {currentPage === "Incidents" && (
-                <div>
-                  <h3>Open incidents</h3>
+                <div className="incidents-content">
+                  <div className="incidents-heading">
+                    <div>
+                      <h3>Security Events</h3>
+                      <p>Monitor and investigate detected security events.</p>
+                    </div>
 
-                  <p>Unusual file modification rate — Investigating</p>
+                    <span className="incidents-count">
+                      {events.length} Events
+                    </span>
+                  </div>
 
-                  <p>Suspicious file extension detected — Under review</p>
+                  {events.length > 0 ? (
+                    <div className="incident-list">
+                      {events.map((event, index) => (
+                        <article className="incident-card" key={index}>
+                          <div
+                            className={`incident-icon incident-icon-${event.color}`}
+                          >
+                            {event.severity === "High" ? (
+                              <ShieldAlert size={20} />
+                            ) : (
+                              <AlertTriangle size={20} />
+                            )}
+                          </div>
+
+                          <div className="incident-details">
+                            <strong>{event.title}</strong>
+
+                            <p>File: {event.asset}</p>
+
+                            <div className="incident-meta">
+                              <span
+                                className={`incident-severity ${event.severity.toLowerCase()}`}
+                              >
+                                {event.severity} severity
+                              </span>
+
+                              <span className="incident-status">
+                                {event.status}
+                              </span>
+                            </div>
+
+                            <p>{event.time}</p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="incidents-empty">
+                      <ShieldCheck size={28} />
+                      <strong>No security events found</strong>
+                      <p>
+                        There are currently no events returned by the server.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
-
               {currentPage === "Protected files" && (
-                <p>
-                  File inventory is currently demo-only. Backend connection is
-                  pending.
-                </p>
+                <div className="recovery-content">
+                  <div className="recovery-header">
+                    <div>
+                      <h3>Protected Files</h3>
+                      <p>
+                        Monitor your stored files and their integrity status.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="refresh-button"
+                      onClick={fetchRecoveryFiles}
+                      disabled={recoveryLoading}
+                    >
+                      <RefreshCw size={15} />
+                      {recoveryLoading ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+
+                  <div className="threat-summary">
+                    <article className="threat-stat">
+                      <span>Total files</span>
+                      <strong>{recoveryFiles.length}</strong>
+                    </article>
+
+                    <article className="threat-stat">
+                      <span>Safe files</span>
+                      <strong>
+                        {
+                          recoveryFiles.filter((file) => file.status === "safe")
+                            .length
+                        }
+                      </strong>
+                    </article>
+
+                    <article className="threat-stat">
+                      <span>Quarantined</span>
+                      <strong>
+                        {
+                          recoveryFiles.filter(
+                            (file) => file.status === "quarantined",
+                          ).length
+                        }
+                      </strong>
+                    </article>
+
+                    <article className="threat-stat">
+                      <span>Pending</span>
+                      <strong>
+                        {
+                          recoveryFiles.filter(
+                            (file) => file.status === "pending",
+                          ).length
+                        }
+                      </strong>
+                    </article>
+                  </div>
+
+                  <div className="recovery-controls">
+                    <input
+                      type="search"
+                      placeholder="Search files..."
+                      value={recoverySearch}
+                      onChange={(e) => setRecoverySearch(e.target.value)}
+                    />
+
+                    <select
+                      value={recoveryFilter}
+                      onChange={(e) => setRecoveryFilter(e.target.value)}
+                    >
+                      <option value="all">All files</option>
+                      <option value="protected">Protected</option>
+                      <option value="unprotected">No backup</option>
+                    </select>
+                  </div>
+
+                  {recoveryError && <p role="alert">{recoveryError}</p>}
+
+                  {recoveryLoading ? (
+                    <p>Loading files...</p>
+                  ) : recoveryFiles.length === 0 ? (
+                    <p>No files found.</p>
+                  ) : filteredRecoveryFiles.length === 0 ? (
+                    <p>No matching files found.</p>
+                  ) : (
+                    <div className="incident-list">
+                      {filteredRecoveryFiles.map((file) => (
+                        <article className="incident-card" key={file._id}>
+                          <div className="incident-icon incident-icon-teal">
+                            <File size={20} />
+                          </div>
+
+                          <div className="incident-details">
+                            <strong>{file.originalName}</strong>
+
+                            <p>
+                              Size: {file.size} bytes ·{" "}
+                              {file.backupStoredName
+                                ? "Backup available"
+                                : "No backup"}
+                            </p>
+
+                            <div className="incident-meta">
+                              <span
+                                className={`incident-severity ${
+                                  file.status === "safe"
+                                    ? "low"
+                                    : file.status === "quarantined"
+                                      ? "high"
+                                      : "medium"
+                                }`}
+                              >
+                                {file.status}
+                              </span>
+
+                              <span className="incident-status">
+                                Integrity: {file.integrityStatus}
+                              </span>
+                            </div>
+
+                            <p>
+                              Added: {new Date(file.createdAt).toLocaleString()}
+                            </p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
 
               {currentPage === "Backup management" && (

@@ -7,6 +7,8 @@ import { validateUploadedFile, } from "../utils/fileValidator.js";
 import fileActivityService from "./fileActivity.service.js";
 import clamavService from "./clamav.service.js";
 import securityEventService from "./securityEvent.service.js";
+import storagePath from "../utils/storagePath.js";
+
 
 const UPLOAD_DIRECTORY = path.resolve(
     process.cwd(),
@@ -309,6 +311,94 @@ if (isInfected) {
 };
 
 // Find a file owned by authenticated user
+const rescanPendingFile = async (fileId, userId) => {
+  const file = await File.findOne({ _id: fileId, userId });
+
+  if (!file) {
+    throw new AppError("File not found or access denied.", 404);
+  }
+
+  if (file.status !== "pending") {
+    throw new AppError("Only pending files can be rescanned.", 409);
+  }
+  if (scanResult.status === "infected") {
+  throw new AppError(
+    "Malware detected. Quarantine operation is not yet implemented.",
+    409
+  );
+}
+  const filePath = storagePath.resolveStoragePath(
+    UPLOAD_DIRECTORY,
+    file.storedName
+  );
+
+  let buffer;
+
+  try {
+    buffer = await fs.readFile(filePath);
+  } catch {
+    file.integrityStatus = "unavailable";
+    await file.save();
+    throw new AppError("Physical file is unavailable.", 404);
+  }
+
+  const scanResult = await clamavService.scanBuffer(buffer);
+
+  const currentHash = crypto
+    .createHash("sha256")
+    .update(buffer)
+    .digest("hex");
+
+  if (scanResult.status === "safe") {
+    if (currentHash !== file.hash) {
+      file.integrityStatus = "modified";
+      await file.save();
+
+      throw new AppError(
+        "File integrity verification failed. Approval denied.",
+        409
+      );
+    }
+
+    if (!file.backupStoredName || !file.backupHash) {
+      throw new AppError(
+        "Trusted backup is required before approval.",
+        409
+      );
+    }
+
+    const backupPath = storagePath.resolveStoragePath(
+      BACKUP_DIRECTORY,
+      file.backupStoredName
+    );
+
+    const backupBuffer = await fs.readFile(backupPath);
+
+    const backupHash = crypto
+      .createHash("sha256")
+      .update(backupBuffer)
+      .digest("hex");
+
+    if (backupHash !== file.hash || backupHash !== currentHash) {
+      throw new AppError("Trusted backup verification failed.", 409);
+    }
+
+    file.status = "safe";
+    file.integrityStatus = "intact";
+    await file.save();
+
+    return file;
+  }
+
+  if (scanResult.status === "infected") {
+    throw new AppError(
+      "Malware detected. Quarantine operation is not yet implemented.",
+      409
+    );
+  }
+
+  throw new AppError("Unexpected ClamAV scan result.", 500);
+};
 const getUserFile = async (fileId, userId) => {
 
     const file = await File.findOne({
@@ -333,9 +423,9 @@ const getUserFiles = async (userId) => {
     )
     .sort({ createdAt: -1 });
 };
-
 export default {
   createFile,
   getUserFile,
   getUserFiles,
+  rescanPendingFile,
 };
