@@ -57,7 +57,7 @@ const fileActivitySchema = new mongoose.Schema({
     timestamps: true,
 }
 );
-
+fileActivitySchema.index({ userId: 1, createdAt: -1 });
 const FileActivity = mongoose.model(
     "FileActivity",
     fileActivitySchema

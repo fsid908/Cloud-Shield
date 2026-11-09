@@ -159,7 +159,6 @@ test("records an integrity violation when tracked file content changes", async (
     hash(Buffer.from("changed content")),
   );
   assert.equal(harness.trackedFile.integrityStatus, "modified");
-
   assert.equal(harness.activities.length, 1);
   await harness.monitor.stop();
 });
@@ -181,6 +180,7 @@ test("debounces duplicate filesystem notifications for the same content", async 
   await harness.monitor.stop();
 });
 
+
 test("reports a tracked file that remains missing after the grace period", async (t) => {
   const harness = await createHarness(t);
 
@@ -194,6 +194,28 @@ test("reports a tracked file that remains missing after the grace period", async
   assert.equal(harness.events.length, 1);
   assert.equal(harness.events[0].currentHash, "missing");
   assert.equal(harness.trackedFile.integrityStatus, "unavailable");
+
+  await harness.monitor.stop();
+});
+
+test("serializes concurrent verification checks for the same file", async (t) => {
+  const harness = await createHarness(t, {
+    contents: "changed content",
+  });
+
+  await harness.monitor.start();
+
+  harness.watcher.emit("change", harness.trackedPath);
+  await wait(30);
+
+  harness.watcher.emit("change", harness.trackedPath);
+  harness.watcher.emit("change", harness.trackedPath);
+
+  await wait(150);
+
+  assert.equal(harness.events.length, 1);
+  assert.equal(harness.activities.length, 1);
+  assert.equal(harness.trackedFile.integrityStatus, "modified");
 
   await harness.monitor.stop();
 });
