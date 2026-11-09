@@ -232,6 +232,12 @@ export const createFileMonitor = ({
 
     await fs.mkdir(rootDirectory, { recursive: true });
 
+    const quarantineDirectory = path.resolve(
+  process.cwd(),
+  "uploads",
+  "quarantine"
+);
+
     const activeWatcher = watchFactory(rootDirectory, {
       ignoreInitial: false,
       persistent: true,
@@ -240,13 +246,14 @@ export const createFileMonitor = ({
         pollInterval: 100,
       },
       ignored: (candidatePath) => {
-        const absolutePath = path.resolve(candidatePath);
+  const absolutePath = path.resolve(candidatePath);
 
-        return (
-          absolutePath === backupDirectory ||
-          absolutePath.startsWith(`${backupDirectory}${path.sep}`)
-        );
-      },
+  return [backupDirectory, quarantineDirectory].some(
+    (directory) =>
+      absolutePath === directory ||
+      absolutePath.startsWith(`${directory}${path.sep}`)
+  );
+},
     });
 
     watcher = activeWatcher;

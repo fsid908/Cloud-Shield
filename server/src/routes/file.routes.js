@@ -20,4 +20,6 @@ router.get ("/:fileId/integrity", authenticate, integrityController.checkIntegri
 // recover File fro trusted bsckup
 router.post("/:fileId/recover", authenticate, recoveryController.recoverFile);
 
+router.post("/:fileId/recover", authenticate, recoveryController.recoverFile);
+
 export default router;

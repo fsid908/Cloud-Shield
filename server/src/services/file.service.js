@@ -7,6 +7,8 @@ import { validateUploadedFile, } from "../utils/fileValidator.js";
 import fileActivityService from "./fileActivity.service.js";
 import clamavService from "./clamav.service.js";
 import securityEventService from "./securityEvent.service.js";
+import storagePath from "../utils/storagePath.js";
+
 
 const UPLOAD_DIRECTORY = path.resolve(
     process.cwd(),
@@ -309,6 +311,168 @@ if (isInfected) {
 };
 
 // Find a file owned by authenticated user
+const rescanPendingFile = async (fileId, userId) => {
+  const file = await File.findOne({ _id: fileId, userId });
+
+  if (!file) {
+    throw new AppError("File not found or access denied.", 404);
+  }
+
+  if (file.status !== "pending") {
+    throw new AppError("Only pending files can be rescanned.", 409);
+  }
+  const filePath = storagePath.resolveStoragePath(
+    UPLOAD_DIRECTORY,
+    file.storedName
+  );
+
+  let buffer;
+
+  try {
+    buffer = await fs.readFile(filePath);
+  } catch {
+    file.integrityStatus = "unavailable";
+    await file.save();
+    throw new AppError("Physical file is unavailable.", 404);
+  }
+
+  const scanResult = await clamavService.scanBuffer(buffer);
+
+  const currentHash = crypto
+    .createHash("sha256")
+    .update(buffer)
+    .digest("hex");
+
+  if (scanResult.status === "safe") {
+    if (currentHash !== file.hash) {
+      file.integrityStatus = "modified";
+      await file.save();
+
+      throw new AppError(
+        "File integrity verification failed. Approval denied.",
+        409
+      );
+    }
+
+    if (!file.backupStoredName || !file.backupHash) {
+      throw new AppError(
+        "Trusted backup is required before approval.",
+        409
+      );
+    }
+
+    const backupPath = storagePath.resolveStoragePath(
+      BACKUP_DIRECTORY,
+      file.backupStoredName
+    );
+
+    const backupBuffer = await fs.readFile(backupPath);
+
+    const backupHash = crypto
+      .createHash("sha256")
+      .update(backupBuffer)
+      .digest("hex");
+
+    if (backupHash !== file.hash || backupHash !== currentHash) {
+      throw new AppError("Trusted backup verification failed.", 409);
+    }
+
+    file.status = "safe";
+    file.integrityStatus = "intact";
+    await file.save();
+
+    return file;
+  }
+
+  if (scanResult.status === "infected") {
+  await fs.mkdir(QUARANTINE_DIRECTORY, {
+    recursive: true,
+  });
+
+  const quarantinedStoredName =
+    `${crypto.randomUUID()}${path.extname(file.storedName)}`;
+
+  const quarantinedPath = storagePath.resolveStoragePath(
+    QUARANTINE_DIRECTORY,
+    quarantinedStoredName
+  );
+
+  const originalBackupName = file.backupStoredName;
+  let backupPath = null;
+  let quarantinedBackupPath = null;
+  let originalMoved = false;
+  let backupMoved = false;
+
+  try {
+    if (originalBackupName) {
+      backupPath = storagePath.resolveStoragePath(
+        BACKUP_DIRECTORY,
+        originalBackupName
+      );
+
+      quarantinedBackupPath = storagePath.resolveStoragePath(
+        QUARANTINE_DIRECTORY,
+        `${crypto.randomUUID()}${path.extname(originalBackupName)}`
+      );
+    }
+
+    await fs.rename(filePath, quarantinedPath);
+    originalMoved = true;
+
+    if (backupPath) {
+      await fs.rename(backupPath, quarantinedBackupPath);
+      backupMoved = true;
+    }
+
+    file.storedName = quarantinedStoredName;
+    file.storagePath = path.join(
+      "uploads",
+      "quarantine",
+      quarantinedStoredName
+    );
+
+    file.backupStoredName = null;
+    file.backupStoragePath = null;
+    file.backupHash = null;
+    file.status = "quarantined";
+
+    await file.save();
+  } catch (error) {
+    if (backupMoved) {
+      await fs.rename(quarantinedBackupPath, backupPath);
+    }
+
+    if (originalMoved) {
+      await fs.rename(quarantinedPath, filePath);
+    }
+
+    throw error;
+  }
+
+  try {
+    await securityEventService.createSecurityEvent({
+      userId,
+      fileId: file._id,
+      eventType: "suspicious_activity",
+      detectionType: "clamav_malware",
+      episodeId: crypto.randomUUID(),
+      riskScore: 90,
+      reason: "ClamAV detected malware during pending-file rescan.",
+      metadata: {
+        scanner: "ClamAV",
+        detectionResult: scanResult.result,
+        originalName: file.originalName,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to record quarantine event:", error.message);
+  }
+
+  return file;
+}
+
+  throw new AppError("Unexpected ClamAV scan result.", 500);
+};
 const getUserFile = async (fileId, userId) => {
 
     const file = await File.findOne({
@@ -333,9 +497,9 @@ const getUserFiles = async (userId) => {
     )
     .sort({ createdAt: -1 });
 };
-
 export default {
   createFile,
   getUserFile,
   getUserFiles,
+  rescanPendingFile,
 };
