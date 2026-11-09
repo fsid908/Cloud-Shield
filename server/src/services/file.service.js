@@ -321,12 +321,6 @@ const rescanPendingFile = async (fileId, userId) => {
   if (file.status !== "pending") {
     throw new AppError("Only pending files can be rescanned.", 409);
   }
-  if (scanResult.status === "infected") {
-  throw new AppError(
-    "Malware detected. Quarantine operation is not yet implemented.",
-    409
-  );
-}
   const filePath = storagePath.resolveStoragePath(
     UPLOAD_DIRECTORY,
     file.storedName
@@ -391,11 +385,91 @@ const rescanPendingFile = async (fileId, userId) => {
   }
 
   if (scanResult.status === "infected") {
-    throw new AppError(
-      "Malware detected. Quarantine operation is not yet implemented.",
-      409
+  await fs.mkdir(QUARANTINE_DIRECTORY, {
+    recursive: true,
+  });
+
+  const quarantinedStoredName =
+    `${crypto.randomUUID()}${path.extname(file.storedName)}`;
+
+  const quarantinedPath = storagePath.resolveStoragePath(
+    QUARANTINE_DIRECTORY,
+    quarantinedStoredName
+  );
+
+  const originalBackupName = file.backupStoredName;
+  let backupPath = null;
+  let quarantinedBackupPath = null;
+  let originalMoved = false;
+  let backupMoved = false;
+
+  try {
+    if (originalBackupName) {
+      backupPath = storagePath.resolveStoragePath(
+        BACKUP_DIRECTORY,
+        originalBackupName
+      );
+
+      quarantinedBackupPath = storagePath.resolveStoragePath(
+        QUARANTINE_DIRECTORY,
+        `${crypto.randomUUID()}${path.extname(originalBackupName)}`
+      );
+    }
+
+    await fs.rename(filePath, quarantinedPath);
+    originalMoved = true;
+
+    if (backupPath) {
+      await fs.rename(backupPath, quarantinedBackupPath);
+      backupMoved = true;
+    }
+
+    file.storedName = quarantinedStoredName;
+    file.storagePath = path.join(
+      "uploads",
+      "quarantine",
+      quarantinedStoredName
     );
+
+    file.backupStoredName = null;
+    file.backupStoragePath = null;
+    file.backupHash = null;
+    file.status = "quarantined";
+
+    await file.save();
+  } catch (error) {
+    if (backupMoved) {
+      await fs.rename(quarantinedBackupPath, backupPath);
+    }
+
+    if (originalMoved) {
+      await fs.rename(quarantinedPath, filePath);
+    }
+
+    throw error;
   }
+
+  try {
+    await securityEventService.createSecurityEvent({
+      userId,
+      fileId: file._id,
+      eventType: "suspicious_activity",
+      detectionType: "clamav_malware",
+      episodeId: crypto.randomUUID(),
+      riskScore: 90,
+      reason: "ClamAV detected malware during pending-file rescan.",
+      metadata: {
+        scanner: "ClamAV",
+        detectionResult: scanResult.result,
+        originalName: file.originalName,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to record quarantine event:", error.message);
+  }
+
+  return file;
+}
 
   throw new AppError("Unexpected ClamAV scan result.", 500);
 };
