@@ -17,6 +17,12 @@ const SEVERITY_RISK_SCORES = Object.freeze({
   critical: 90,
 });
 import responseEngine from "./responseEngine.service.js";
+<<<<<<< HEAD
+=======
+import containmentService from "./containment.service.js";
+
+
+>>>>>>> 62e2166 (feat: integrate automated file containment and recovery)
 //  Generates a deterministic ID for a detection episode.
 
 const createEpisodeId = (signalType, activities) => {
@@ -119,6 +125,38 @@ const persistDetectionSignals = async (userId, signals, activities) => {
             return [];
     }
 };
+<<<<<<< HEAD
+=======
+
+/**
+ * Collects unique activities responsible for detected signals.
+ * These activities determine which files are eligible for containment.
+ */
+const getContainmentTargets = (signals, activities) => {
+    const triggeringActivities = signals.flatMap((signal) =>
+        getTriggeringActivities(signal.type, activities)
+    );
+
+    // Deduplicate activities using their database IDs.
+    const uniqueActivities = [
+        ...new Map(
+            triggeringActivities
+                .filter((activity) => activity._id && activity.fileId)
+                .map((activity) => [
+                    String(activity._id),
+                    activity,
+                ])
+        ).values(),
+    ];
+
+    return {
+        activities: uniqueActivities,
+        fileIds: getAffectedFileIds(uniqueActivities),
+    };
+};
+
+
+>>>>>>> 62e2166 (feat: integrate automated file containment and recovery)
 //   Converts detection signals into persistent security events.
 
 const persistDetectionSignals = async (
@@ -472,7 +510,7 @@ const detectSuspiciousActivity = async (userId, windowSeconds = 30) => {
         renames: analysis.renames,
     });
 
-    
+
     const riskLevel = riskScorer.getRiskLevel(
         riskAssessment.score
     );
@@ -482,8 +520,39 @@ const detectSuspiciousActivity = async (userId, windowSeconds = 30) => {
         riskScore: riskAssessment.score,
     });
 
+    // Step 4: Identify files associated with detected signals.
+    const containmentTargets = getContainmentTargets(
+        signals,
+        activities
+    );
 
-    // Step 4: Persist detection signals as security events.
+    let containmentResult = null;
+
+    // Automatically isolate files only when containment is required.
+    if (
+        responseDecision.requiresContainment &&
+        containmentTargets.fileIds.length > 0
+    ) {
+        const containmentEpisodeId = createEpisodeId(
+            "automatic_containment",
+            containmentTargets.activities
+        );
+
+        const containmentReason = signals
+            .map((signal) => signal.description)
+            .join(" ");
+
+        containmentResult = await containmentService.containFiles({
+            userId,
+            fileIds: containmentTargets.fileIds,
+            riskScore: riskAssessment.score,
+            riskLevel: responseDecision.riskLevel,
+            episodeId: containmentEpisodeId,
+            reason: containmentReason,
+        });
+    }
+
+    // Step 5: Persist detection signals as security events.
     // Risk score is passed explicitly to avoid scope-related errors.
     const events = await persistDetectionSignals(
         userId,
@@ -494,7 +563,7 @@ const detectSuspiciousActivity = async (userId, windowSeconds = 30) => {
     );
 
 
-    // Step 5: Return detection and risk assessment results.
+    // Step 6: Return detection and risk assessment results.
 
     return {
         windowSeconds: analysis.windowSeconds,
@@ -512,6 +581,8 @@ const detectSuspiciousActivity = async (userId, windowSeconds = 30) => {
         riskReasons: riskAssessment.reasons,
 
         responseDecision,
+    
+        containment: containmentResult,
     };
 };
 export default {

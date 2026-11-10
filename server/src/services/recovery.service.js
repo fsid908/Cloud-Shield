@@ -17,6 +17,11 @@ const BACKUP_DIRECTORY = path.join(
     "backups"
 );
 
+const QUARANTINE_DIRECTORY = path.join(
+    UPLOAD_DIRECTORY,
+    "quarantine"
+);
+
 // Calculate a SHA-256 hash for file integrity verification.
 const calculateHash = (buffer) => {
     return crypto
@@ -99,13 +104,64 @@ const recoverFile = async (fileId, userId) => {
             );
         }
 
-        // Only safe files can be recovered.
-if (file.status !== "safe") {
-    throw new AppError(
-        "Recovery is only available for safe files.",
-        409
-    );
-}
+        // Recovery is supported for safe and quarantined files.
+        const isQuarantined = file.status === "quarantined";
+
+        if (!["safe", "quarantined"].includes(file.status)) {
+            throw new AppError(
+                "Recovery is only available for safe or quarantined files.",
+                409
+            );
+        }
+
+        // Validate quarantine metadata before recovery.
+        if (
+            isQuarantined &&
+            (!file.originalStoredName || !file.quarantineStoredName)
+        ) {
+            throw new AppError(
+                "Quarantine recovery metadata is incomplete.",
+                409
+            );
+        }
+
+        // Ensure the active filename matches quarantine metadata.
+        if (
+            isQuarantined &&
+            file.storedName !== file.quarantineStoredName
+        ) {
+            throw new AppError(
+                "Quarantine file metadata is inconsistent.",
+                409
+            );
+        }
+
+        const recoveryStoredName = isQuarantined
+            ? file.originalStoredName
+            : file.storedName;
+
+        const currentFilePath = storagePath.resolveStoragePath(
+            UPLOAD_DIRECTORY,
+            recoveryStoredName
+        );
+
+        const quarantinedFilePath = isQuarantined
+            ? storagePath.resolveStoragePath(
+                QUARANTINE_DIRECTORY,
+                file.quarantineStoredName
+            )
+            : null;
+
+        // Ensure quarantined evidence still exists before recovery.
+        if (
+            isQuarantined &&
+            !(await fileExists(quarantinedFilePath))
+        ) {
+            throw new AppError(
+                "Quarantined evidence is unavailable. Recovery requires investigation.",
+                409
+            );
+        }
 
         // A trusted backup requires both its stored filename and hash.
         if (!file.backupStoredName || !file.backupHash) {
@@ -119,11 +175,6 @@ if (file.status !== "safe") {
         const backupPath = storagePath.resolveStoragePath(
             BACKUP_DIRECTORY,
             file.backupStoredName
-        );
-
-        const currentFilePath = storagePath.resolveStoragePath(
-            UPLOAD_DIRECTORY,
-            file.storedName
         );
 
         let backupBuffer;
@@ -164,7 +215,15 @@ if (file.status !== "safe") {
             `.rollback-${crypto.randomUUID()}.tmp`
         );
 
-        const previousIntegrityStatus = file.integrityStatus;
+        // Preserve every database field changed by this operation.
+        const previousFileState = {
+            storedName: file.storedName,
+            storagePath: file.storagePath,
+            status: file.status,
+            integrityStatus: file.integrityStatus,
+            originalStoredName: file.originalStoredName,
+            quarantineStoredName: file.quarantineStoredName,
+        };
 
         let temporaryFileCreated = false;
         let rollbackFileCreated = false;
@@ -227,6 +286,15 @@ if (file.status !== "safe") {
                 currentFilePath
             );
 
+            // A quarantined recovery must never overwrite an unexpected
+            // file at the original destination.
+            if (isQuarantined && originalFileExisted) {
+                throw new AppError(
+                    "Recovery destination already exists. Manual investigation is required.",
+                    409
+                );
+            }
+
             if (originalFileExisted) {
                 // Move the original aside before installing the recovery file.
                 await fs.rename(
@@ -237,14 +305,29 @@ if (file.status !== "safe") {
                 rollbackFileCreated = true;
             }
 
-            // The destination is now absent, avoiding replacement conflicts.
-            await fs.rename(
-                temporaryFilePath,
-                currentFilePath
-            );
+            if (isQuarantined) {
+                // Install atomically without replacing an existing destination.
+                // The temporary file and destination are in the same directory.
+                await fs.link(
+                    temporaryFilePath,
+                    currentFilePath
+                );
 
-            temporaryFileCreated = false;
-            recoveredFileInstalled = true;
+                recoveredFileInstalled = true;
+
+                await fs.unlink(temporaryFilePath);
+
+                temporaryFileCreated = false;
+            } else {
+                // Preserve the existing recovery behavior for safe files.
+                await fs.rename(
+                    temporaryFilePath,
+                    currentFilePath
+                );
+
+                temporaryFileCreated = false;
+                recoveredFileInstalled = true;
+            }
 
             // Verify the installed file, not just the temporary copy.
             const restoredBuffer = await fs.readFile(
@@ -262,13 +345,32 @@ if (file.status !== "safe") {
                 );
             }
 
-            // Update the database only after verifying the restored file.
+            // Update database metadata only after verifying the restored file.
+            file.storedName = recoveryStoredName;
+
+            file.storagePath = path.join(
+                "uploads",
+                recoveryStoredName
+            );
+
+            file.status = "safe";
             file.integrityStatus = "intact";
 
+            // Preserve original and quarantine filenames as historical metadata.
             await file.save();
+
         } catch (recoveryError) {
-            // Restore the previous in-memory state.
-            file.integrityStatus = previousIntegrityStatus;
+            // Restore the complete previous in-memory document state.
+            file.storedName = previousFileState.storedName;
+            file.storagePath = previousFileState.storagePath;
+            file.status = previousFileState.status;
+            file.integrityStatus = previousFileState.integrityStatus;
+
+            file.originalStoredName =
+                previousFileState.originalStoredName;
+
+            file.quarantineStoredName =
+                previousFileState.quarantineStoredName;
 
             try {
                 if (rollbackFileCreated) {
@@ -288,6 +390,7 @@ if (file.status !== "safe") {
                     );
 
                     rollbackFileCreated = false;
+
                 } else if (
                     recoveredFileInstalled &&
                     !originalFileExisted
@@ -300,6 +403,7 @@ if (file.status !== "safe") {
 
                     recoveredFileInstalled = false;
                 }
+
             } catch (rollbackError) {
                 // Preserve the rollback file for manual recovery.
                 console.error(
@@ -320,13 +424,15 @@ if (file.status !== "safe") {
 
             // Preserve the original recovery error after successful rollback.
             throw recoveryError;
+
         } finally {
             // Remove the temporary file whenever it was created but not installed.
-            // If it was renamed into place, temporaryFileCreated is already false.
+            // If it was renamed or linked into place, temporaryFileCreated is updated.
             if (temporaryFileCreated) {
                 try {
                     await removeFileIfExists(temporaryFilePath);
                     temporaryFileCreated = false;
+
                 } catch (cleanupError) {
                     // Do not hide the original recovery error with a cleanup error.
                     console.error("Failed to clean up temporary recovery file.", {
@@ -343,6 +449,7 @@ if (file.status !== "safe") {
             try {
                 await fs.unlink(rollbackFilePath);
                 rollbackFileCreated = false;
+
             } catch (error) {
                 // A cleanup failure must remain visible to operators.
                 // Do not report recovery failure after a successful database save.
@@ -371,6 +478,7 @@ if (file.status !== "safe") {
             restoredHash: file.hash,
             integrityStatus: file.integrityStatus,
         };
+
     } catch (error) {
         // Only record failure when a user's file was successfully identified.
         if (file) {

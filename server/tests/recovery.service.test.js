@@ -501,3 +501,181 @@ test(
         );
     }
 );
+
+test(
+    "recovers a quarantined file and preserves the quarantined evidence",
+    async (t) => {
+        const userId = `test-user-${crypto.randomUUID()}`;
+        const fileId = `test-file-${crypto.randomUUID()}`;
+
+        const originalStoredName = `original-${crypto.randomUUID()}.txt`;
+        const quarantineStoredName = `quarantine-${crypto.randomUUID()}.txt`;
+        const backupStoredName = `backup-${crypto.randomUUID()}.txt`;
+
+        const originalContents = Buffer.from(
+            "trusted original file contents"
+        );
+
+        const suspiciousContents = Buffer.from(
+            "suspicious modified file contents"
+        );
+
+        const expectedHash = calculateHash(originalContents);
+
+        await fs.mkdir(UPLOAD_DIRECTORY, { recursive: true });
+        await fs.mkdir(BACKUP_DIRECTORY, { recursive: true });
+        await fs.mkdir(
+            path.join(UPLOAD_DIRECTORY, "quarantine"),
+            { recursive: true }
+        );
+
+        const originalFilePath = path.join(
+            UPLOAD_DIRECTORY,
+            originalStoredName
+        );
+
+        const quarantineFilePath = path.join(
+            UPLOAD_DIRECTORY,
+            "quarantine",
+            quarantineStoredName
+        );
+
+        const backupFilePath = path.join(
+            BACKUP_DIRECTORY,
+            backupStoredName
+        );
+
+        await fs.writeFile(
+            quarantineFilePath,
+            suspiciousContents
+        );
+
+        await fs.writeFile(
+            backupFilePath,
+            originalContents
+        );
+
+        const file = {
+            _id: fileId,
+            userId,
+            originalName: "document.txt",
+
+            storedName: quarantineStoredName,
+
+            storagePath: path.join(
+                "uploads",
+                "quarantine",
+                quarantineStoredName
+            ),
+
+            originalStoredName,
+            quarantineStoredName,
+
+            backupStoredName,
+
+            backupStoragePath: path.join(
+                "uploads",
+                "backups",
+                backupStoredName
+            ),
+
+            backupHash: expectedHash,
+            hash: expectedHash,
+
+            status: "quarantined",
+            integrityStatus: "unavailable",
+
+            save: async function () {
+                this.saveCalled = true;
+                return this;
+            },
+        };
+
+        const activityCalls = [];
+
+        t.mock.method(
+            File,
+            "findOne",
+            async () => file
+        );
+
+        t.mock.method(
+            fileActivityService,
+            "recordFileActivity",
+            async (activity) => {
+                activityCalls.push(activity);
+                return activity;
+            }
+        );
+
+        t.after(async () => {
+            for (const filePath of [
+                originalFilePath,
+                quarantineFilePath,
+                backupFilePath,
+            ]) {
+                try {
+                    await fs.unlink(filePath);
+                } catch (error) {
+                    if (error.code !== "ENOENT") {
+                        throw error;
+                    }
+                }
+            }
+        });
+
+        const result = await recoveryService.recoverFile(
+            fileId,
+            userId
+        );
+
+        // Verify that the original file was restored.
+        const restoredContents = await fs.readFile(
+            originalFilePath
+        );
+
+        assert.deepEqual(
+            restoredContents,
+            originalContents
+        );
+
+        // Verify that quarantined evidence still exists.
+        const preservedEvidence = await fs.readFile(
+            quarantineFilePath
+        );
+
+        assert.deepEqual(
+            preservedEvidence,
+            suspiciousContents
+        );
+
+        // Verify database metadata.
+        assert.equal(file.status, "safe");
+        assert.equal(file.integrityStatus, "intact");
+        assert.equal(file.storedName, originalStoredName);
+
+        assert.equal(
+            file.originalStoredName,
+            originalStoredName
+        );
+
+        assert.equal(
+            file.quarantineStoredName,
+            quarantineStoredName
+        );
+
+        assert.equal(file.saveCalled, true);
+
+        // Verify the recovery result.
+        assert.equal(result.fileId, fileId);
+        assert.equal(result.restoredHash, expectedHash);
+        assert.equal(result.integrityStatus, "intact");
+
+        // Verify successful recovery activity.
+        assert.ok(
+            activityCalls.some(
+                (activity) => activity.activityType === "recovered"
+            )
+        );
+    }
+);
