@@ -1,3 +1,4 @@
+
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -7,12 +8,8 @@ import File from "../src/models/file.model.js";
 import fileService from "../src/services/file.service.js";
 import fileActivityService from "../src/services/fileActivity.service.js";
 import clamavService from "../src/services/clamav.service.js";
+import securityEventService from "../src/services/securityEvent.service.js";
 
-/**
- * Creates a valid plain-text upload for testing.
- * The file validator accepts text/plain when no binary
- * file signature is detected.
- */
 const createUploadedFile = () => {
     const buffer = Buffer.from("CloudShield upload test");
 
@@ -24,10 +21,6 @@ const createUploadedFile = () => {
     };
 };
 
-/**
- * Mocks ClamAV to simulate a clean file scan.
- * Unit tests should not depend on an external ClamAV daemon.
- */
 const mockClamAV = (t) => {
     t.mock.method(
         clamavService,
@@ -42,15 +35,14 @@ const mockClamAV = (t) => {
     );
 };
 
-/**
- * Mocks filesystem operations so tests never need to write
- * to the application's real uploads directory.
- *
- * The in-memory map simulates files created by the service.
- */
 const mockFilesystem = (t, options = {}) => {
     const files = new Map();
     const unlinkedPaths = [];
+    const renamedPaths = [];
+
+    for (const [filePath, contents] of options.initialFiles ?? []) {
+        files.set(filePath, Buffer.from(contents));
+    }
 
     t.mock.method(fs, "mkdir", async () => undefined);
 
@@ -65,7 +57,6 @@ const mockFilesystem = (t, options = {}) => {
                     .includes("backups");
 
                 if (options.failBackupWrite && isBackup) {
-                    // Simulate a partial write before failure.
                     files.set(
                         filePath,
                         Buffer.from(buffer).subarray(0, 4)
@@ -103,9 +94,29 @@ const mockFilesystem = (t, options = {}) => {
         files.delete(filePath);
     });
 
+    t.mock.method(fs, "rename", async (source, destination) => {
+        if (!files.has(source)) {
+            const error = new Error("File not found");
+            error.code = "ENOENT";
+            throw error;
+        }
+
+        if (files.has(destination)) {
+            const error = new Error("Destination already exists");
+            error.code = "EEXIST";
+            throw error;
+        }
+
+        files.set(destination, files.get(source));
+        files.delete(source);
+
+        renamedPaths.push({ source, destination });
+    });
+
     return {
         files,
         unlinkedPaths,
+        renamedPaths,
     };
 };
 
@@ -114,7 +125,6 @@ test("creates the current file, trusted backup, metadata, and activity", async (
 
     const filesystem = mockFilesystem(t);
     const uploadedFile = createUploadedFile();
-
     const userId = "test-user-id";
 
     const createdDocument = {
@@ -142,16 +152,9 @@ test("creates the current file, trusted backup, metadata, and activity", async (
     );
 
     assert.equal(result, createdDocument);
+    assert.equal(filesystem.files.size, 2);
 
-    assert.equal(
-        filesystem.files.size,
-        2,
-        "Both current file and backup should exist"
-    );
-
-    const storedContents = [...filesystem.files.values()];
-
-    for (const contents of storedContents) {
+    for (const contents of filesystem.files.values()) {
         assert.deepEqual(contents, uploadedFile.buffer);
     }
 });
@@ -174,17 +177,8 @@ test("cleans up the current file and partial backup when backup writing fails", 
         /Simulated backup write failure/
     );
 
-    assert.equal(
-        filesystem.files.size,
-        0,
-        "Files created by the failed upload should be removed"
-    );
-
-    assert.equal(
-        filesystem.unlinkedPaths.length,
-        2,
-        "Cleanup should attempt to remove both owned files"
-    );
+    assert.equal(filesystem.files.size, 0);
+    assert.equal(filesystem.unlinkedPaths.length, 2);
 });
 
 test("cleans up both files when database record creation fails", async (t) => {
@@ -204,11 +198,7 @@ test("cleans up both files when database record creation fails", async (t) => {
         /Simulated database creation failure/
     );
 
-    assert.equal(
-        filesystem.files.size,
-        0,
-        "Both files should be removed after database creation fails"
-    );
+    assert.equal(filesystem.files.size, 0);
 });
 
 test("attempts database rollback when activity logging fails", async (t) => {
@@ -252,91 +242,161 @@ test("attempts database rollback when activity logging fails", async (t) => {
         /Simulated activity logging failure/
     );
 
-    assert.equal(
-        deletionAttempted,
-        true,
-        "The service should attempt to roll back the database record"
-    );
-
-    assert.equal(
-        filesystem.files.size,
-        0,
-        "Owned files should be removed after successful database rollback"
-    );
+    assert.equal(deletionAttempted, true);
+    assert.equal(filesystem.files.size, 0);
 });
 
-test(
-    "preserves both files when database rollback fails",
-    async (t) => {
-        mockClamAV(t);
+test("preserves both files when database rollback fails", async (t) => {
+    mockClamAV(t);
 
-        const filesystem = mockFilesystem(t);
+    const filesystem = mockFilesystem(t);
+    const uploadedFile = createUploadedFile();
 
-        const uploadedFile = createUploadedFile();
+    const createdDocument = {
+        _id: "test-file-id",
+        originalName: uploadedFile.originalname,
+    };
 
-        const createdDocument = {
-            _id: "test-file-id",
-            originalName: uploadedFile.originalname,
-        };
+    t.mock.method(File, "create", async () => createdDocument);
 
-        // Simulate successful creation of the database record.
-        t.mock.method(File, "create", async () => createdDocument);
+    let deletionAttempted = false;
 
-        let deletionAttempted = false;
+    t.mock.method(File, "deleteOne", async () => {
+        deletionAttempted = true;
+        throw new Error("Simulated database rollback failure");
+    });
 
-        // Simulate a database failure during rollback.
-        t.mock.method(File, "deleteOne", async () => {
-            deletionAttempted = true;
-
-            throw new Error("Simulated database rollback failure");
-        });
-
-        // Simulate failure after the files and database record exist.
-        t.mock.method(
-            fileActivityService,
-            "recordFileActivity",
-            async () => {
-                throw new Error("Simulated activity logging failure");
-            }
-        );
-
-        // The original activity logging error must be preserved.
-        await assert.rejects(
-            fileService.createFile(
-                "test-user-id",
-                uploadedFile
-            ),
-            /Simulated activity logging failure/
-        );
-
-        // Verify that the service attempted database rollback.
-        assert.equal(
-            deletionAttempted,
-            true,
-            "The service should attempt database rollback"
-        );
-
-        // Both the current file and backup must remain available.
-        assert.equal(
-            filesystem.files.size,
-            2,
-            "Both files must be preserved when database rollback fails"
-        );
-
-        // Verify that the original file contents remain intact.
-        for (const contents of filesystem.files.values()) {
-            assert.deepEqual(
-                contents,
-                uploadedFile.buffer,
-                "Preserved files must contain the original upload contents"
-            );
+    t.mock.method(
+        fileActivityService,
+        "recordFileActivity",
+        async () => {
+            throw new Error("Simulated activity logging failure");
         }
+    );
 
-        // No physical file should have been deleted.
-        assert.equal(
-            filesystem.unlinkedPaths.length,
-            0,
-            "The service must not delete files when rollback fails"
+    await assert.rejects(
+        fileService.createFile(
+            "test-user-id",
+            uploadedFile
+        ),
+        /Simulated activity logging failure/
+    );
+
+    assert.equal(deletionAttempted, true);
+    assert.equal(filesystem.files.size, 2);
+
+    for (const contents of filesystem.files.values()) {
+        assert.deepEqual(
+            contents,
+            uploadedFile.buffer,
+            "Preserved files must contain the original upload contents"
         );
     }
+
+    assert.equal(filesystem.unlinkedPaths.length, 0);
+});
+
+test("quarantines an infected pending file and its backup", async (t) => {
+    const infectedContents = Buffer.from("infected test content");
+    const backupContents = Buffer.from("trusted backup content");
+
+    const storedName = "pending-test.txt";
+    const backupStoredName = "pending-backup.txt";
+
+    const filePath = path.resolve(
+        process.cwd(),
+        "uploads",
+        storedName
+    );
+
+    const backupPath = path.resolve(
+        process.cwd(),
+        "uploads",
+        "backups",
+        backupStoredName
+    );
+
+    const filesystem = mockFilesystem(t, {
+        initialFiles: [
+            [filePath, infectedContents],
+            [backupPath, backupContents],
+        ],
+    });
+
+    t.mock.method(clamavService, "scanBuffer", async (buffer) => {
+        assert.deepEqual(buffer, infectedContents);
+
+        return {
+            status: "infected",
+            result: "Eicar-Test-Signature",
+        };
+    });
+
+    const file = {
+        _id: "test-file-id",
+        userId: "test-user-id",
+        originalName: "test.txt",
+        storedName,
+        storagePath: path.join("uploads", storedName),
+        backupStoredName,
+        backupStoragePath: path.join(
+            "uploads",
+            "backups",
+            backupStoredName
+        ),
+        backupHash: "test-backup-hash",
+        status: "pending",
+        integrityStatus: "intact",
+        save: async () => file,
+    };
+
+    t.mock.method(File, "findOne", async (filter) => {
+        assert.equal(filter._id, file._id);
+        assert.equal(filter.userId, file.userId);
+
+        return file;
+    });
+
+    let securityEvent;
+
+    t.mock.method(
+        securityEventService,
+        "createSecurityEvent",
+        async (event) => {
+            securityEvent = event;
+            return {};
+        }
+    );
+
+    const result = await fileService.rescanPendingFile(
+        file._id,
+        file.userId
+    );
+
+    assert.equal(result, file);
+    assert.equal(file.status, "quarantined");
+    assert.equal(file.backupStoredName, null);
+    assert.equal(file.backupStoragePath, null);
+    assert.equal(file.backupHash, null);
+
+    assert.ok(file.storedName.endsWith(".txt"));
+    assert.equal(
+    file.storagePath,
+    path.join("uploads", "quarantine", file.storedName)
 );
+
+    assert.equal(filesystem.files.size, 2);
+    assert.equal(filesystem.renamedPaths.length, 2);
+
+    assert.equal(
+        filesystem.renamedPaths.every(({ destination }) =>
+            destination.includes(`${path.sep}quarantine${path.sep}`)
+        ),
+        true
+    );
+
+    assert.ok(securityEvent);
+    assert.equal(securityEvent.eventType, "suspicious_activity");
+    assert.equal(securityEvent.detectionType, "clamav_malware");
+    assert.equal(securityEvent.riskScore, 90);
+});

@@ -46,7 +46,38 @@ const getFile = async (req, res, next) => {
   }
 };
 
+const rescanFile = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const { fileId } = req.params;
+
+    const file = await fileService.rescanPendingFile(fileId, userId);
+
+    return sendSuccess(
+      res,
+      200,
+      "File scanned and approved successfully.",
+      file
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getUserFiles = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const files = await fileService.getUserFiles(userId);
+
+    return sendSuccess(res, 200, "Files retrieved successfully.", files);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export default {
   createFile,
   getFile,
+  getUserFiles,
+  rescanFile,
 };

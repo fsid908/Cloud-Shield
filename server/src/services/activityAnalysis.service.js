@@ -28,8 +28,9 @@ const analyzeRecentActivity = async (userId, windowSeconds = 30) => {
         .lean();
 
     const uniqueFiles = new Set(
-        activities.map((activity) => activity.fileId.toString()
-        )
+        activities
+    .filter((activity) => activity.fileId)
+    .map((activity) => activity.fileId.toString())
     );
 
     const modifications = activities.filter((activity) => activity.activityType === "modified").length;

@@ -82,7 +82,6 @@ const fileSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-
     //integrity status
     integrityStatus: {
       type: String,
