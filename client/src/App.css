@@ -2987,3 +2987,17 @@ button.workspace:hover {
     grid-template-columns: 1fr;
   }
 }
+
+.scan-progress-indeterminate {
+  width: 40%;
+  animation: scan-progress 1.4s ease-in-out infinite;
+}
+
+@keyframes scan-progress {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}

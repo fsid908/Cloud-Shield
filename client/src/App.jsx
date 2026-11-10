@@ -158,29 +158,28 @@ function App() {
   const [user, setUser] = useState(null);
 
   const [dashboardData, setDashboardData] = useState(null);
-const navigation = [
-  { label: "Overview", icon: LayoutDashboard },
-  {
-    label: "Threat detection",
-    icon: ShieldAlert,
-    count: String(dashboardData?.eventsTotal ?? 0),
-  },
-  {
-    label: "Incidents",
-    icon: Siren,
-    count: String(
-      new Set(
-        (dashboardData?.events ?? [])
-          .map((event) => event.episodeId)
-          .filter(Boolean)
-      ).size
-    ),
-  },
-  { label: "Protected files", icon: Files },
-  { label: "Backup management", icon: Database },
-  { label: "Recovery center", icon: RefreshCw },
-];
-
+  const navigation = [
+    { label: "Overview", icon: LayoutDashboard },
+    {
+      label: "Threat detection",
+      icon: ShieldAlert,
+      count: String(dashboardData?.eventsTotal ?? 0),
+    },
+    {
+      label: "Incidents",
+      icon: Siren,
+      count: String(
+        new Set(
+          (dashboardData?.events ?? [])
+            .map((event) => event.episodeId)
+            .filter(Boolean),
+        ).size,
+      ),
+    },
+    { label: "Protected files", icon: Files },
+    { label: "Backup management", icon: Database },
+    { label: "Recovery center", icon: RefreshCw },
+  ];
 
   const [monitoringStatus, setMonitoringStatus] = useState("unavailable");
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -294,13 +293,12 @@ const navigation = [
           : "unavailable",
       );
       console.log("Detection API Data:", detection.data);
-setDashboardData({
-  activity: activity.data,
-  detection: detection.data,
-  events: events.data?.events ?? [],
-  eventsTotal: events.data?.pagination?.total ?? 0,
-});
-
+      setDashboardData({
+        activity: activity.data,
+        detection: detection.data,
+        events: events.data?.events ?? [],
+        eventsTotal: events.data?.pagination?.total ?? 0,
+      });
     } catch (error) {
       if (error.name !== "AbortError") {
         setDashboardError(error.message);
@@ -449,8 +447,6 @@ setDashboardData({
 
   const [scanStatus, setScanStatus] = useState("idle");
 
-  const [scanProgress, setScanProgress] = useState(0);
-
   const [scanResult, setScanResult] = useState(null);
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -528,8 +524,6 @@ setDashboardData({
 
     setScanStatus("scanning");
 
-    setScanProgress(0);
-
     setScanResult(null);
 
     setUploadMessage("Uploading file securely to Cloud-Shield...");
@@ -559,7 +553,6 @@ setDashboardData({
 
       const isQuarantined = result.data?.status === "quarantined";
 
-      setScanProgress(100);
       setScanStatus("completed");
 
       setScanResult({
@@ -574,8 +567,6 @@ setDashboardData({
       );
     } catch (error) {
       setScanStatus("idle");
-
-      setScanProgress(0);
 
       setScanResult(null);
 
@@ -621,46 +612,51 @@ setDashboardData({
       trend: "neutral",
     },
   ];
-const events = (dashboardData?.events ?? []).map((event) => {
-  const riskScore = Number(event.riskScore ?? 0);
+  const events = (dashboardData?.events ?? []).map((event) => {
+    const riskScore = Number(event.riskScore ?? 0);
 
-  const color =
-    riskScore >= 80 ? "red" :
-    riskScore >= 60 ? "orange" :
-    riskScore >= 30 ? "amber" :
-    "teal";
+    const color =
+      riskScore >= 80
+        ? "red"
+        : riskScore >= 60
+          ? "orange"
+          : riskScore >= 30
+            ? "amber"
+            : "teal";
 
-  const severity =
-    riskScore >= 80 ? "Critical" :
-    riskScore >= 60 ? "High" :
-    riskScore >= 30 ? "Medium" :
-    "Low";
+    const severity =
+      riskScore >= 80
+        ? "Critical"
+        : riskScore >= 60
+          ? "High"
+          : riskScore >= 30
+            ? "Medium"
+            : "Low";
 
-  const timestamp = event.createdAt ?? event.updatedAt;
+    const timestamp = event.createdAt ?? event.updatedAt;
 
-  return {
-  id: event._id,
-  episodeId: event.episodeId,
-  riskScore,
-    title:
-      event.reason ||
-      event.detectionType ||
-      event.eventType ||
-      "Security event",
-    asset:
-      event.fileId?.originalName ||
-      event.fileId?.storedName ||
-      "Unknown file",
-    time: timestamp ? new Date(timestamp).toLocaleString() : "—",
-    severity,
-    status:
-      event.eventType === "suspicious_activity"
-        ? "Threat detected"
-        : "Recorded",
-    color,
-  };
-});
-
+    return {
+      id: event._id,
+      episodeId: event.episodeId,
+      riskScore,
+      title:
+        event.reason ||
+        event.detectionType ||
+        event.eventType ||
+        "Security event",
+      asset:
+        event.fileId?.originalName ||
+        event.fileId?.storedName ||
+        "Unknown file",
+      time: timestamp ? new Date(timestamp).toLocaleString() : "—",
+      severity,
+      status:
+        event.eventType === "suspicious_activity"
+          ? "Threat detected"
+          : "Recorded",
+      color,
+    };
+  });
 
   const threatSummary = {
     high: events.filter((event) => event.severity === "High").length,
@@ -1716,7 +1712,7 @@ const events = (dashboardData?.events ?? []).map((event) => {
                         <UploadCloud size={17} />
 
                         {scanStatus === "scanning"
-                          ? `Scanning... ${scanProgress}%`
+                          ? "Uploading & Scanning..."
                           : scanStatus === "completed"
                             ? "Scan Again"
                             : "Upload & Scan"}
@@ -1726,25 +1722,15 @@ const events = (dashboardData?.events ?? []).map((event) => {
                     {scanStatus === "scanning" && (
                       <div className="scan-progress-card" role="status">
                         <div className="scan-progress-heading">
-                          <strong>Scanning file</strong>
-
-                          <span>{scanProgress}%</span>
+                          <strong>Uploading and scanning file</strong>
+                          <span>Please wait...</span>
                         </div>
 
-                        <div
-                          className="scan-progress-track"
-                          role="progressbar"
-                          aria-valuenow={scanProgress}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <div
-                            className="scan-progress-fill"
-                            style={{ width: `${scanProgress}%` }}
-                          />
+                        <div className="scan-progress-track">
+                          <div className="scan-progress-fill scan-progress-indeterminate" />
                         </div>
 
-                        <p>Simulating the scanning workflow...</p>
+                        <p>Cloud-Shield is checking your file with ClamAV.</p>
                       </div>
                     )}
 
