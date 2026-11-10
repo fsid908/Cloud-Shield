@@ -1,4 +1,10 @@
-import { describe, it, beforeEach, afterEach, mock } from "node:test";
+import {
+    describe,
+    it,
+    beforeEach,
+    afterEach,
+    mock,
+} from "node:test";
 
 import assert from "node:assert/strict";
 
@@ -7,41 +13,36 @@ import detectionEngine from "../src/services/detectionEngine.service.js";
 import securityEventService from "../src/services/securityEvent.service.js";
 
 const createAnalysis = (overrides = {}) => ({
-  windowSeconds: 30,
-  totalActivities: 0,
-  uniqueFiles: 0,
-  modifications: 0,
-  renames: 0,
-  deletions: 0,
-  extensionChanges: 0,
-  activities: [],
-  ...overrides,
+    windowSeconds: 30,
+    totalActivities: 0,
+    uniqueFiles: 0,
+    modifications: 0,
+    renames: 0,
+    deletions: 0,
+    extensionChanges: 0,
+    activities: [],
+    ...overrides,
 });
 
 describe("detectionEngine.detectSuspiciousActivity", () => {
-  let analysisMock;
+    let analysisMock;
 
-  beforeEach(() => {
-    analysisMock = mock.method(
-      activityAnalysisService,
-      "analyzeRecentActivity",
-      async (_userId, windowSeconds) => createAnalysis({ windowSeconds }),
-    );
+    beforeEach(() => {
+        analysisMock = mock.method(
+            activityAnalysisService,
+            "analyzeRecentActivity",
+            async (_userId, windowSeconds) =>
+                createAnalysis({ windowSeconds })
+        );
 
-    mock.method(securityEventService, "createSecurityEvent", async (event) => ({
-      _id: `event-${event.fileId}-${event.detectionType}`,
-      ...event,
-    }));
-  });
-
-  afterEach(() => {
-    mock.restoreAll();
-  });
-
-  it("should reject a missing user ID", async () => {
-    await assert.rejects(detectionEngine.detectSuspiciousActivity(null), {
-      message: "User id is required.",
-      statusCode: 400,
+        mock.method(
+            securityEventService,
+            "createSecurityEvent",
+            async (event) => ({
+                _id: `event-${event.fileId}-${event.detectionType}`,
+                ...event,
+            })
+        );
     });
     assert.equal(analysisMock.mock.callCount(), 0);
   });

@@ -1,6 +1,6 @@
-// import { hash } from "bcryptjs"; wrong import use in future
+// import { hash } from "bcryptjs";  import use in future
 import mongoose from "mongoose";
-// import { maxLength, string } from "zod";  wrong import use in future
+// import { maxLength, string } from "zod";   import use in future
 const fileSchema = new mongoose.Schema(
   {
     // identify the user who owns the file
@@ -24,6 +24,18 @@ const fileSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+    },
+
+    // Original server-controlled filename before quarantine.
+    originalStoredName: {
+      type: String,
+      default: null,
+    },
+
+    // Server-controlled filename of the quarantined suspicious file.
+    quarantineStoredName: {
+      type: String,
+      default: null,
     },
 
     // identify where the file is physically stored
@@ -98,13 +110,13 @@ const fileSchema = new mongoose.Schema(
 
 
 fileSchema.index(
-    { backupStoredName: 1 },
-    {
-        unique: true,
-        partialFilterExpression: {
-            backupStoredName: { $type: "string" },
-        },
-    }
+  { backupStoredName: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      backupStoredName: { $type: "string" },
+    },
+  }
 );
 
 const File = mongoose.model("File", fileSchema);

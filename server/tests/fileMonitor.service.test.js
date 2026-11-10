@@ -230,7 +230,7 @@ test("ignores untracked files and files inside the backups directory", async (t)
 
   await fs.writeFile(backupPath, "backup");
   await fs.writeFile(untrackedPath, "untracked");
-
+  
   await harness.monitor.start();
 
   harness.watcher.emit("change", backupPath);
