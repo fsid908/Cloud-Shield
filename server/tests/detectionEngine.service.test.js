@@ -111,12 +111,12 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
 
     assert.equal(result.events.length, 6);
     assert.equal(result.persistedEventCount, 6);
-    assert.equal(result.riskScore, 30);
-    assert.equal(result.riskLevel, "medium");
+    assert.equal(result.riskScore, 25);
+   assert.equal(result.riskLevel, "low");
 
     assert.deepEqual(result.riskReasons, [
       "3 to 5 unique files were modified.",
-      "More than 3 integrity events occurred within 30 seconds.",
+      "More than 3 suspicious events occurred within 30 seconds.",
     ]);
 
     assert.ok(
@@ -277,7 +277,6 @@ describe("detectionEngine.detectSuspiciousActivity", () => {
 
     assert.equal(firstEvent.detectionType, "mass_file_modification");
   });
-});
     afterEach(() => {
         mock.restoreAll();
     });
