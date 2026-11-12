@@ -191,6 +191,7 @@ function App() {
   const [recoveryError, setRecoveryError] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
   const [editFullName, setEditFullName] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -638,6 +639,7 @@ function App() {
     return {
       id: event._id,
       episodeId: event.episodeId,
+      reason: event.reason || "Not provided by backend",
       riskScore,
       title:
         event.reason ||
@@ -1927,7 +1929,15 @@ function App() {
                     ].map((item) => (
                       <div key={item.label}>
                         <span>{item.label}</span>
-                        <strong>{item.value ?? "—"}</strong>
+                        <strong
+                          className={
+                            item.label === "Risk score"
+                              ? `risk-score risk-${dashboardData?.detection?.riskLevel ?? "unknown"}`
+                              : ""
+                          }
+                        >
+                          {item.value ?? "—"}
+                        </strong>
                       </div>
                     ))}
                   </div>
@@ -2025,7 +2035,8 @@ function App() {
                               <span
                                 className={`event-icon event-icon-${event.color}`}
                               >
-                                {event.color === "red" ? (
+                                {event.color === "red" ||
+                                event.color === "orange" ? (
                                   <ShieldAlert size={16} />
                                 ) : event.color === "amber" ? (
                                   <FileSearch size={16} />
@@ -2049,9 +2060,10 @@ function App() {
                               tone={
                                 event.color === "red"
                                   ? "danger"
-                                  : event.color === "amber"
+                                  : event.color === "orange" ||
+                                      event.color === "amber"
                                     ? "warning"
-                                    : "info"
+                                    : "success"
                               }
                             >
                               {event.severity}
@@ -2073,9 +2085,7 @@ function App() {
                               type="button"
                               className="row-action"
                               aria-label={`View ${event.title}`}
-                              onClick={() =>
-                                notify(`Demo event: ${event.title}`)
-                              }
+                              onClick={() => setSelectedEvent(event)}
                             >
                               <ArrowUpRight size={16} />
                             </button>
@@ -2198,6 +2208,87 @@ function App() {
                 </button>
               </div>
             </form>
+          </section>
+        </div>
+      )}
+
+      {selectedEvent && (
+        <div
+          className="event-modal-backdrop"
+          onClick={() => setSelectedEvent(null)}
+        >
+          <section
+            className="event-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="event-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="event-modal-header">
+              <div>
+                <span>SECURITY EVENT</span>
+                <h2 id="event-modal-title">Event Details</h2>
+                <p>{selectedEvent.title}</p>
+              </div>
+
+              <button
+                type="button"
+                className="profile-modal-close"
+                aria-label="Close modal"
+                onClick={() => setSelectedEvent(null)}
+              >
+                <X size={19} />
+              </button>
+            </div>
+
+            <div className="event-modal-details">
+              <div>
+                <span>Severity</span>
+                <strong>{selectedEvent.severity}</strong>
+              </div>
+
+              <div>
+                <span>Status</span>
+                <strong>{selectedEvent.status}</strong>
+              </div>
+
+              <div>
+                <span>Affected File</span>
+                <strong>{selectedEvent.asset}</strong>
+              </div>
+
+              <div>
+                <span>Risk Score</span>
+                <strong>{selectedEvent.riskScore}</strong>
+              </div>
+
+              <div>
+                <span>Detection Reason</span>
+                <strong>{selectedEvent.reason || "Not provided by backend"}</strong>
+              </div>
+
+              <div>
+                <span>Timestamp</span>
+                <strong>{selectedEvent.time}</strong>
+              </div>
+
+              {selectedEvent.episodeId && (
+                <div>
+                  <span>Episode ID</span>
+                  <strong>{selectedEvent.episodeId}</strong>
+                </div>
+              )}
+            </div>
+
+            <div className="profile-modal-actions">
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => setSelectedEvent(null)}
+              >
+                Close
+              </button>
+            </div>
           </section>
         </div>
       )}
